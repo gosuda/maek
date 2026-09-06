@@ -77,9 +77,25 @@ func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, m
 			req.URL.Scheme = "http"
 			req.URL.Host = targetHost
 			req.Host = targetHost
-			if req.Header.Get("X-Forwarded-Proto") == "" {
-				req.Header.Set("X-Forwarded-Proto", "http")
+
+			// Forwarded headers
+			req.Header.Set("X-Forwarded-Host", targetHost)
+			req.Header.Set("X-Forwarded-Proto", targetScheme)
+
+			// Rewrite Origin to match target host so WebSocket CSWSH checks pass
+			if req.Header.Get("Origin") != "" {
+				req.Header.Set("Origin", targetScheme+"://"+targetHost)
 			}
+
+			// Rewrite Referer if present
+			if ref := req.Header.Get("Referer"); ref != "" {
+				if parsedRef, err := url.Parse(ref); err == nil {
+					parsedRef.Scheme = targetScheme
+					parsedRef.Host = targetHost
+					req.Header.Set("Referer", parsedRef.String())
+				}
+			}
+
 			// Only allow gzip or uncompressed from upstream so HTML injection works reliably
 			if req.Header.Get("Accept-Encoding") != "" {
 				req.Header.Set("Accept-Encoding", "gzip")

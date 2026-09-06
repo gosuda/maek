@@ -11,7 +11,11 @@ import (
 	"strings"
 )
 
-var metaCSPRegex = regexp.MustCompile(`(?i)<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>`)
+var (
+	metaCSPRegex    = regexp.MustCompile(`(?i)<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>`)
+	domainAttrRegex = regexp.MustCompile(`(?i);\s*Domain=[^;]+`)
+	secureAttrRegex = regexp.MustCompile(`(?i);\s*Secure`)
+)
 
 // InjectFloatScript inserts the float.js script tag before </body> or </html>.
 func InjectFloatScript(htmlContent []byte, serviceID, serviceName string) []byte {
@@ -40,6 +44,18 @@ func InjectFloatScript(htmlContent []byte, serviceID, serviceName string) []byte
 // BuildResponseModifier creates a ModifyResponse function tailored to a specific service.
 func BuildResponseModifier(serviceID, serviceName string) func(*http.Response) error {
 	return func(resp *http.Response) error {
+		// Sanitize Set-Cookie headers so client browser accepts upstream cookies on the proxy host
+		if cookies := resp.Header["Set-Cookie"]; len(cookies) > 0 {
+			newCookies := make([]string, len(cookies))
+			for i, c := range cookies {
+				cleaned := domainAttrRegex.ReplaceAllString(c, "")
+				// Remove Secure attribute so cookies are kept even over plain HTTP on IP
+				cleaned = secureAttrRegex.ReplaceAllString(cleaned, "")
+				newCookies[i] = cleaned
+			}
+			resp.Header["Set-Cookie"] = newCookies
+		}
+
 		// Only inspect HTML responses
 		cType := strings.ToLower(resp.Header.Get("Content-Type"))
 		if !strings.Contains(cType, "text/html") {
