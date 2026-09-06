@@ -49,12 +49,15 @@ BUMP_TYPE="${BUMP_ARG:-${BUMP:-}}"
 
 prompt_user() {
     local prompt_msg="$1"
-    if [ -r /dev/tty ]; then
+    if [ -t 0 ] || [ -p /dev/stdin ] || [ -f /dev/stdin ]; then
+        printf "%s" "$prompt_msg"
+        read -r USER_INPUT || USER_INPUT=""
+    elif [ -r /dev/tty ]; then
         printf "%s" "$prompt_msg" > /dev/tty
-        read -r USER_INPUT < /dev/tty
+        read -r USER_INPUT < /dev/tty || USER_INPUT=""
     else
         printf "%s" "$prompt_msg"
-        read -r USER_INPUT
+        read -r USER_INPUT || USER_INPUT=""
     fi
 }
 
