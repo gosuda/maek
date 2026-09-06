@@ -3,13 +3,17 @@ set -eu
 
 # Server template variables (injected dynamically when served via /_maek/install.sh)
 TEMPLATE_SERVER="__SERVER_URL__"
-TEMPLATE_VERSION="__VERSION__"
 
 BASE_URL="${SERVER_URL:-}"
 if [ -z "$BASE_URL" ]; then
   case "$TEMPLATE_SERVER" in
     http://*|https://*) BASE_URL="$TEMPLATE_SERVER" ;;
   esac
+fi
+
+if [ -z "$BASE_URL" ]; then
+  echo "Error: Server URL not determined. Please specify SERVER_URL (e.g. SERVER_URL=http://localhost:8080 sh install.sh)" >&2
+  exit 1
 fi
 
 # Detect OS
@@ -39,32 +43,12 @@ TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'maek-install')"
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT INT TERM
 
-echo "==> Downloading maek for ${OS}/${ARCH}..."
+echo "==> Downloading maek for ${OS}/${ARCH} from ${BASE_URL}..."
 
-DOWNLOAD_SUCCESS=0
-# 1. Download directly from maek server (embedded binaries)
-if [ -n "$BASE_URL" ]; then
-  SERVER_DOWNLOAD_URL="${BASE_URL}/_maek/download?os=${OS}&arch=${ARCH}"
-  if curl -fsSL "$SERVER_DOWNLOAD_URL" -o "$TMPDIR/$TARBALL" 2>/dev/null; then
-    DOWNLOAD_SUCCESS=1
-  fi
-fi
-
-# 2. Fallback to GitHub Releases if no server URL provided
-if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
-  VER="${VERSION:-${TEMPLATE_VERSION}}"
-  case "$VER" in
-    __VERSION__|dev|"") VER="0.1.0" ;;
-    *) VER="${VER#v}" ;;
-  esac
-
-  GITHUB_RELEASE_TARBALL="maek_${VER}_${OS}_${ARCH}.tar.gz"
-  GITHUB_URL="https://github.com/gosuda/maek/releases/download/v${VER}/${GITHUB_RELEASE_TARBALL}"
-  echo "==> Fetching from GitHub Releases (v${VER})..."
-  if ! curl -fsSL "$GITHUB_URL" -o "$TMPDIR/$TARBALL"; then
-    echo "Error: Failed to download maek package from $GITHUB_URL" >&2
-    exit 1
-  fi
+DOWNLOAD_URL="${BASE_URL}/_maek/download?os=${OS}&arch=${ARCH}"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPDIR/$TARBALL"; then
+  echo "Error: Failed to download maek package from $DOWNLOAD_URL" >&2
+  exit 1
 fi
 
 # Extract binary

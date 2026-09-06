@@ -2,43 +2,30 @@
 $ErrorActionPreference = 'Stop'
 
 $TemplateServer = "__SERVER_URL__"
-$TemplateVersion = "__VERSION__"
 
 $BaseUrl = $env:SERVER_URL
 if ([string]::IsNullOrEmpty($BaseUrl) -and ($TemplateServer -like "http://*" -or $TemplateServer -like "https://*")) {
     $BaseUrl = $TemplateServer
 }
 
+if ([string]::IsNullOrEmpty($BaseUrl)) {
+    Write-Error "Server URL not determined. Please set `$env:SERVER_URL (e.g. `$env:SERVER_URL='http://localhost:8080') before running this script."
+    exit 1
+}
+
 $TmpDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $TmpDir -Force | Out-Null
 $ZipPath = Join-Path $TmpDir "maek_Windows_x86_64.zip"
 
-Write-Host "==> Downloading maek for Windows (x86_64)..." -ForegroundColor Cyan
+Write-Host "==> Downloading maek for Windows (x86_64) from $BaseUrl..." -ForegroundColor Cyan
 
-$DownloadSuccess = $false
-if (-not [string]::IsNullOrEmpty($BaseUrl)) {
-    $ServerUrl = "$BaseUrl/_maek/download?os=Windows&arch=x86_64"
-    try {
-        Invoke-WebRequest -Uri $ServerUrl -OutFile $ZipPath -UseBasicParsing -ErrorAction Stop
-        $DownloadSuccess = $true
-    } catch {
-        # Fallback to GitHub
-    }
-}
-
-if (-not $DownloadSuccess) {
-    $Ver = $env:VERSION
-    if ([string]::IsNullOrEmpty($Ver) -and ($TemplateVersion -match '^v?[0-9]')) {
-        $Ver = $TemplateVersion
-    }
-    if ([string]::IsNullOrEmpty($Ver)) {
-        $Ver = "0.1.0"
-    }
-    $Ver = $Ver.TrimStart('v')
-
-    $GithubUrl = "https://github.com/gosuda/maek/releases/download/v${Ver}/maek_${Ver}_Windows_x86_64.zip"
-    Write-Host "==> Fetching from GitHub Releases (v${Ver})..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $GithubUrl -OutFile $ZipPath -UseBasicParsing
+$DownloadUrl = "$BaseUrl/_maek/download?os=Windows&arch=x86_64"
+try {
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing -ErrorAction Stop
+} catch {
+    Write-Error "Failed to download maek from $DownloadUrl: $_"
+    Remove-Item -Recurse -Force $TmpDir
+    exit 1
 }
 
 $InstallDir = "$env:LOCALAPPDATA\Programs\maek"
