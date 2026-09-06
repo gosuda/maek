@@ -1,4 +1,4 @@
-.PHONY: all build test clean run-server run-agent release release-snapshot check-release help
+.PHONY: all build test clean run-server run-agent release release-snapshot check-release help embed-binaries tag
 
 BINARY_NAME=maek
 MAIN_SRC=./cmd/maek
@@ -23,8 +23,10 @@ check-release:
 release-snapshot:
 	go tool goreleaser release --snapshot --clean
 
-# Interactively prompts for major/minor/patch bump, creates git tag, pushes to remote, and runs GoReleaser
-release:
+# Always performs a clean build (including embedded binaries), then
+# interactively prompts for major/minor/patch bump, creates git tag, pushes to remote, and runs GoReleaser
+release: clean
+	@$(MAKE) --no-print-directory embed-binaries
 	@./hack/release.sh $(if $(VERSION),--version=$(VERSION),) $(if $(BUMP),--bump=$(BUMP),)
 
 # Create and push next tag interactively without running GoReleaser locally
@@ -47,7 +49,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make build             - Build the maek binary"
 	@echo "  make test              - Run all unit and integration tests"
-	@echo "  make release           - Automatically bumps git tag, pushes, and executes release"
+	@echo "  make release           - Clean build (incl. embedded binaries), bump git tag, push, and execute release"
 	@echo "                           Options: VERSION=vX.Y.Z, BUMP=patch|minor|major"
 	@echo "  make tag               - Automatically creates and pushes next git tag only"
 	@echo "  make release-snapshot  - Build snapshot release artifacts locally in ./dist without publishing"
