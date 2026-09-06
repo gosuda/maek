@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+dist/
+maek
+maek.exe
+*.exe
+*.test
+*.out
+*.md
+.idea
+.vscode
