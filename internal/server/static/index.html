@@ -30,9 +30,16 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    .container {
+    .page {
       width: 100%;
       max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .container {
+      width: 100%;
       background: #ffffff;
       border: 1px solid #cfd9de;
       border-top: 3px solid var(--accent);
@@ -46,7 +53,6 @@
     /* Header */
     .header {
       padding: 24px 28px 20px 28px;
-      border-bottom: 1px solid #eff3f4;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -112,9 +118,8 @@
 
     /* Quick Start Guide Form */
     .guide-section {
-      padding: 24px 28px;
+      padding: 12px 28px 24px 28px;
       background: #fbfcfd;
-      border-bottom: 1px solid #eff3f4;
     }
 
     /* Steps & OS Tabs */
@@ -529,9 +534,8 @@
 
     /* Footer */
     .footer {
-      padding: 20px 28px;
+      padding: 0;
       text-align: center;
-      border-top: 1px solid #eff3f4;
       font-size: 12px;
       color: #8b98a5;
     }
@@ -546,11 +550,17 @@
       text-decoration: underline;
       color: var(--accent);
     }
+
+    .footer-repo {
+      margin-top: 6px;
+    }
   </style>
 </head>
 <body>
+  <div class="page">
+
+  <!-- Header Card: Pure typographic branding, no icon -->
   <div class="container">
-    <!-- Header: Pure typographic branding, no icon -->
     <header class="header">
       <div class="brand-text">
         <div class="brand-title-row">
@@ -564,8 +574,28 @@
         <span id="active-badge">Active</span>
       </div>
     </header>
+  </div>
 
-    <!-- Quick Start: Step 1 (Install) & Step 2 (Connect) -->
+  <!-- Card: Connected Tunnels -->
+  <div class="container">
+    <div class="section-header">
+      <span class="section-title">Connected Tunnels</span>
+      <span class="service-count" id="count-label">0 online</span>
+    </div>
+
+    <!-- Feed -->
+    <div id="feed" class="feed">
+      <!-- Dynamically filled -->
+    </div>
+  </div>
+
+  <!-- Card: Quick Start (Install & Connect) -->
+  <div class="container">
+    <div class="section-header">
+      <span class="section-title">Quick Start</span>
+      <span class="service-count">maek CLI &middot; 2 steps</span>
+    </div>
+
     <section class="guide-section">
       <!-- Step 1: Install maek CLI -->
       <div class="step-block">
@@ -630,22 +660,15 @@
         </div>
       </div>
     </section>
+  </div>
 
-    <!-- Active Services Section -->
-    <div class="section-header">
-      <span class="section-title">Connected Tunnels</span>
-      <span class="service-count" id="count-label">0 online</span>
+  <!-- Footer -->
+  <footer class="footer">
+    <a href="/_maek/version" id="footer-version" class="footer-link">maek</a>
+    <div class="footer-repo">
+      Developed in the open at <a href="https://github.com/gosuda/maek" target="_blank" rel="noopener" class="footer-link">github.com/gosuda/maek &rarr;</a>
     </div>
-
-    <!-- Feed -->
-    <div id="feed" class="feed">
-      <!-- Dynamically filled -->
-    </div>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <a href="/_maek/version" id="footer-version" class="footer-link">maek</a>
-    </footer>
+  </footer>
   </div>
 
   <script>
@@ -795,7 +818,7 @@
         feed.innerHTML = `
           <div class="empty-feed">
             No active tunnels connected yet.<br>
-            Run the generated command above in your terminal to connect a service.
+            Run the command in the quick start guide below to connect a service.
           </div>
         `;
         return;
