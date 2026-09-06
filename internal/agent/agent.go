@@ -63,6 +63,19 @@ func NewAgent(cfg Config) (*Agent, error) {
 
 	isTLS := parsedTarget.Scheme == "https"
 
+	// Auto-scrape metadata if description or thumbnail is missing
+	if cfg.Description == "" || cfg.Thumbnail == "" {
+		scrapedDesc, scrapedThumb := ScrapeTargetMetadata(parsedTarget)
+		if cfg.Description == "" && scrapedDesc != "" {
+			cfg.Description = scrapedDesc
+			log.Printf("[maek-agent] Auto-detected description from target: %q", scrapedDesc)
+		}
+		if cfg.Thumbnail == "" && scrapedThumb != "" {
+			cfg.Thumbnail = scrapedThumb
+			log.Printf("[maek-agent] Auto-detected icon/thumbnail from target")
+		}
+	}
+
 	return &Agent{
 		cfg:       cfg,
 		targetURL: parsedTarget,
