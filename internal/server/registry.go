@@ -80,6 +80,10 @@ func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, m
 			if req.Header.Get("X-Forwarded-Proto") == "" {
 				req.Header.Set("X-Forwarded-Proto", "http")
 			}
+			// Only allow gzip or uncompressed from upstream so HTML injection works reliably
+			if req.Header.Get("Accept-Encoding") != "" {
+				req.Header.Set("Accept-Encoding", "gzip")
+			}
 		},
 		Transport:      transport,
 		ModifyResponse: modifyResponse,
