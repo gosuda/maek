@@ -20,8 +20,13 @@ check-release:
 release-snapshot:
 	go tool goreleaser release --snapshot --clean
 
+# Interactively prompts for major/minor/patch bump, creates git tag, pushes to remote, and runs GoReleaser
 release:
-	go tool goreleaser release --clean
+	@./hack/release.sh $(if $(VERSION),--version=$(VERSION),) $(if $(BUMP),--bump=$(BUMP),)
+
+# Create and push next tag interactively without running GoReleaser locally
+tag:
+	@./hack/release.sh --tag-only $(if $(VERSION),--version=$(VERSION),) $(if $(BUMP),--bump=$(BUMP),)
 
 run-server:
 	go run $(MAIN_SRC) server -p 8080
@@ -39,7 +44,9 @@ help:
 	@echo "Available targets:"
 	@echo "  make build             - Build the maek binary"
 	@echo "  make test              - Run all unit and integration tests"
-	@echo "  make release           - Run full goreleaser release"
+	@echo "  make release           - Automatically bumps git tag, pushes, and executes release"
+	@echo "                           Options: VERSION=vX.Y.Z, BUMP=patch|minor|major"
+	@echo "  make tag               - Automatically creates and pushes next git tag only"
 	@echo "  make release-snapshot  - Build snapshot release artifacts locally in ./dist without publishing"
 	@echo "  make check-release     - Validate .goreleaser.yaml configuration"
 	@echo "  make docker-build      - Build Docker container image"
