@@ -19,6 +19,7 @@ const (
 	EndpointFloatJS  = "/_maek/float.js"
 	EndpointServices = "/_maek/api/services"
 	EndpointVersion  = "/_maek/version"
+	EndpointThumb    = "/_maek/thumb"
 
 	IDLength    = 6
 	MaxIDLength = 32
@@ -69,7 +70,7 @@ func SanitizePreferredID(id string) string {
 // IsReservedName checks if a name or ID conflicts with internal /_maek/* endpoints.
 func IsReservedName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "ws", "float.js", "float", "api", "version", "select":
+	case "ws", "float.js", "float", "api", "version", "select", "thumb":
 		return true
 	default:
 		return false
