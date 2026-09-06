@@ -550,7 +550,7 @@
         const color = pickColor(svc.name || 'A');
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
         const hasDesc = Boolean(svc.description && svc.description.trim());
-        const curlCmd = `curl -H "X-Maek-Service: ${svc.name}" http://${host}/`;
+        const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" http://${host}/`;
 
         const avatarHtml = hasThumb 
           ? `<img src="${escapeHtml(svc.thumbnail)}" alt="${escapeHtml(svc.name)}" onerror="this.parentElement.innerHTML='${initial}'" />`

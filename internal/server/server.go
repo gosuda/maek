@@ -85,6 +85,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
 	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
 	preferredID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if preferredID == "" {
+		preferredID = name
+	}
 
 	id, err := s.registry.AllocateID(preferredID)
 	if err != nil {

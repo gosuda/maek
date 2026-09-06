@@ -43,6 +43,9 @@ func NewAgent(cfg Config) (*Agent, error) {
 	if cfg.Name == "" {
 		cfg.Name = "app"
 	}
+	if cfg.PreferredID == "" {
+		cfg.PreferredID = cfg.Name
+	}
 	if cfg.Target == "" {
 		cfg.Target = "http://localhost:8080"
 	}
