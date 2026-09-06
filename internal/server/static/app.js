@@ -179,7 +179,11 @@
         return;
       }
 
-      feed.innerHTML = services.map(svc => {
+      // Oldest registration first (client-side, keeps order stable even if
+      // the API response order changes).
+      const sorted = [...services].sort((a, b) => new Date(a.connected_at) - new Date(b.connected_at));
+
+      feed.innerHTML = sorted.map(svc => {
         const initial = (svc.name || 'A').charAt(0).toUpperCase();
         const color = pickColor(svc.name || 'A');
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());

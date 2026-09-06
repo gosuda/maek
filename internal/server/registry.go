@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"sort"
 	"sync"
 	"time"
 
@@ -170,5 +171,9 @@ func (r *Registry) List() []protocol.ServiceInfo {
 	for _, ss := range r.services {
 		list = append(list, ss.Info)
 	}
+	// Oldest registration first, so the dashboard feed is stable across polls.
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ConnectedAt.Before(list[j].ConnectedAt)
+	})
 	return list
 }
