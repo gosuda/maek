@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
+	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
 	"sync"
@@ -18,16 +19,17 @@ import (
 )
 
 type Config struct {
-	ServerURL string // e.g. "ws://localhost:8080" or "http://localhost:8080"
-	Name      string // e.g. "my-app"
-	Target    string // e.g. "http://localhost:3000"
+	ServerURL   string // e.g. "ws://localhost:8080" or "http://localhost:8080"
+	Name        string // e.g. "my-app"
+	Description string // optional service description
+	Thumbnail   string // optional thumbnail/avatar URL
+	Target      string // local target, e.g. "http://localhost:3000" (kept private to agent)
 }
 
 type Agent struct {
-	cfg        Config
-	targetURL  *url.URL
-	targetAddr string
-	isTLS      bool
+	cfg       Config
+	targetURL *url.URL
+	isTLS     bool
 
 	stopChan chan struct{}
 	wg       sync.WaitGroup
@@ -56,21 +58,12 @@ func NewAgent(cfg Config) (*Agent, error) {
 	}
 
 	isTLS := parsedTarget.Scheme == "https"
-	hostPort := parsedTarget.Host
-	if !strings.Contains(hostPort, ":") {
-		if isTLS {
-			hostPort += ":443"
-		} else {
-			hostPort += ":80"
-		}
-	}
 
 	return &Agent{
-		cfg:        cfg,
-		targetURL:  parsedTarget,
-		targetAddr: hostPort,
-		isTLS:      isTLS,
-		stopChan:   make(chan struct{}),
+		cfg:       cfg,
+		targetURL: parsedTarget,
+		isTLS:     isTLS,
+		stopChan:  make(chan struct{}),
 	}, nil
 }
 
@@ -113,7 +106,7 @@ func (a *Agent) Stop() {
 	a.wg.Wait()
 }
 
-// buildWebSocketURL converts http(s) to ws(s) and appends /_maek/ws with query params.
+// buildWebSocketURL converts http(s) to ws(s) and appends /_maek/ws with metadata (no target!).
 func (a *Agent) buildWebSocketURL() string {
 	srv := a.cfg.ServerURL
 	if strings.HasPrefix(srv, "http://") {
@@ -131,7 +124,12 @@ func (a *Agent) buildWebSocketURL() string {
 
 	q := url.Values{}
 	q.Set("name", a.cfg.Name)
-	q.Set("target", a.cfg.Target)
+	if a.cfg.Description != "" {
+		q.Set("desc", a.cfg.Description)
+	}
+	if a.cfg.Thumbnail != "" {
+		q.Set("thumb", a.cfg.Thumbnail)
+	}
 
 	return srv + "?" + q.Encode()
 }
@@ -154,7 +152,7 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 		serviceID = resp.Header.Get(protocol.HeaderMaekID)
 	}
 
-	log.Printf("[maek-agent] Connected to server! Assigned Service ID: [%s], Name: '%s', Target: %s",
+	log.Printf("[maek-agent] Connected to server! Assigned Service ID: [%s], Name: '%s' (forwarding to %s)",
 		serviceID, a.cfg.Name, a.cfg.Target)
 
 	netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
@@ -167,54 +165,53 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 	}
 	defer session.Close()
 
-	for {
-		stream, err := session.AcceptStream()
-		if err != nil {
-			return fmt.Errorf("yamux accept stream: %w", err)
+	// Local reverse proxy that speaks to private target
+	targetProxy := httputil.NewSingleHostReverseProxy(a.targetURL)
+	origDirector := targetProxy.Director
+	targetProxy.Director = func(req *http.Request) {
+		origDirector(req)
+		req.Host = a.targetURL.Host
+		req.Header.Set("X-Forwarded-Host", a.targetURL.Host)
+		req.Header.Set("X-Forwarded-Proto", a.targetURL.Scheme)
+
+		// Fix Origin and Referer for CSWSH validation
+		if req.Header.Get("Origin") != "" {
+			req.Header.Set("Origin", a.targetURL.Scheme+"://"+a.targetURL.Host)
 		}
-
-		a.wg.Add(1)
-		go func(s net.Conn) {
-			defer a.wg.Done()
-			a.handleStream(s)
-		}(stream)
+		if ref := req.Header.Get("Referer"); ref != "" {
+			if parsedRef, err := url.Parse(ref); err == nil {
+				parsedRef.Scheme = a.targetURL.Scheme
+				parsedRef.Host = a.targetURL.Host
+				req.Header.Set("Referer", parsedRef.String())
+			}
+		}
 	}
-}
-
-// handleStream bridges the incoming Yamux virtual stream with the local target server.
-func (a *Agent) handleStream(stream net.Conn) {
-	defer stream.Close()
-
-	var targetConn net.Conn
-	var err error
 
 	if a.isTLS {
-		targetConn, err = tls.Dial("tcp", a.targetAddr, &tls.Config{
-			InsecureSkipVerify: true,
-		})
-	} else {
-		targetConn, err = net.DialTimeout("tcp", a.targetAddr, 5*time.Second)
+		targetProxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
 	}
 
-	if err != nil {
-		log.Printf("[maek-agent] Failed to dial local target %s: %v", a.targetAddr, err)
-		errMsg := fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\nmaek-agent could not connect to local target: %v\r\n", err)
-		_, _ = stream.Write([]byte(errMsg))
-		return
+	localSrv := &http.Server{
+		Handler: targetProxy,
 	}
-	defer targetConn.Close()
 
-	// Bidirectional pipe
-	errChan := make(chan error, 2)
+	srvErrCh := make(chan error, 1)
 	go func() {
-		_, copyErr := io.Copy(targetConn, stream)
-		errChan <- copyErr
-	}()
-	go func() {
-		_, copyErr := io.Copy(stream, targetConn)
-		errChan <- copyErr
+		srvErrCh <- localSrv.Serve(session)
 	}()
 
-	// Wait until one direction finishes
-	<-errChan
+	select {
+	case <-ctx.Done():
+		_ = localSrv.Close()
+		return ctx.Err()
+	case <-a.stopChan:
+		_ = localSrv.Close()
+		return nil
+	case err := <-srvErrCh:
+		return err
+	}
 }

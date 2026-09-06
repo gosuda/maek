@@ -120,7 +120,9 @@ Usage: maek agent [flags]
 Flags:
   -server, -s string   Central maek server URL (e.g. "ws://vps-ip:8080")
   -name, -n string     Service identifier name (default "app")
-  -target, -t string   Local target HTTP URL (default "http://localhost:3000")
+  -desc, -d string     Short description of the service (optional)
+  -thumb string        Thumbnail or avatar image URL (optional)
+  -target, -t string   Local target HTTP URL (default "http://localhost:3000", kept private to agent)
 ```
 
 ---

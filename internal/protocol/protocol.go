@@ -27,7 +27,8 @@ const (
 type ServiceInfo struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
-	Target      string    `json:"target"`
+	Description string    `json:"description,omitempty"`
+	Thumbnail   string    `json:"thumbnail,omitempty"`
 	ConnectedAt time.Time `json:"connected_at"`
 	RemoteAddr  string    `json:"remote_addr"`
 }

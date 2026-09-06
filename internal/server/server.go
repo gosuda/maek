@@ -82,10 +82,8 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "app"
 	}
-	target := strings.TrimSpace(r.URL.Query().Get("target"))
-	if target == "" {
-		target = "http://localhost"
-	}
+	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
+	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
 
 	id, err := protocol.GenerateID()
 	if err != nil {
@@ -118,7 +116,8 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	info := protocol.ServiceInfo{
 		ID:          id,
 		Name:        name,
-		Target:      target,
+		Description: desc,
+		Thumbnail:   thumb,
 		ConnectedAt: time.Now(),
 		RemoteAddr:  r.RemoteAddr,
 	}
@@ -130,7 +129,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[maek-server] Registered agent '%s' (ID: %s) targeting %s from %s", name, id, target, r.RemoteAddr)
+	log.Printf("[maek-server] Registered agent '%s' (ID: %s) from %s", name, id, r.RemoteAddr)
 
 	// Block until connection is closed
 	<-session.CloseChan()

@@ -64,7 +64,7 @@ func TestE2E_TunnelLifecycle(t *testing.T) {
 	}
 	catalogHTML, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if !strings.Contains(string(catalogHTML), "Tunnel Gateway") {
+	if !strings.Contains(string(catalogHTML), "Tunnels") {
 		t.Fatalf("expected Catalog Web UI, got: %s", string(catalogHTML))
 	}
 

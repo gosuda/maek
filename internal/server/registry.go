@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"sync"
 	"time"
 
@@ -24,8 +23,6 @@ type ServiceSession struct {
 	Info         protocol.ServiceInfo
 	Session      *yamux.Session
 	ReverseProxy *httputil.ReverseProxy
-	TargetHost   string
-	TargetScheme string
 }
 
 // Registry manages all active agent sessions.
@@ -47,20 +44,6 @@ func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, m
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	parsedTarget, err := url.Parse(info.Target)
-	if err != nil {
-		return nil, err
-	}
-
-	targetHost := parsedTarget.Host
-	if targetHost == "" {
-		targetHost = info.Target
-	}
-	targetScheme := parsedTarget.Scheme
-	if targetScheme == "" {
-		targetScheme = "http"
-	}
-
 	// Create custom transport that dials streams through this yamux session
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -75,26 +58,7 @@ func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, m
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
-			req.URL.Host = targetHost
-			req.Host = targetHost
-
-			// Forwarded headers
-			req.Header.Set("X-Forwarded-Host", targetHost)
-			req.Header.Set("X-Forwarded-Proto", targetScheme)
-
-			// Rewrite Origin to match target host so WebSocket CSWSH checks pass
-			if req.Header.Get("Origin") != "" {
-				req.Header.Set("Origin", targetScheme+"://"+targetHost)
-			}
-
-			// Rewrite Referer if present
-			if ref := req.Header.Get("Referer"); ref != "" {
-				if parsedRef, err := url.Parse(ref); err == nil {
-					parsedRef.Scheme = targetScheme
-					parsedRef.Host = targetHost
-					req.Header.Set("Referer", parsedRef.String())
-				}
-			}
+			req.URL.Host = "maek"
 
 			// Only allow gzip or uncompressed from upstream so HTML injection works reliably
 			if req.Header.Get("Accept-Encoding") != "" {
@@ -113,8 +77,6 @@ func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, m
 		Info:         info,
 		Session:      session,
 		ReverseProxy: proxy,
-		TargetHost:   targetHost,
-		TargetScheme: targetScheme,
 	}
 
 	r.services[info.ID] = ss
