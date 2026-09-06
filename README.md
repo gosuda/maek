@@ -17,6 +17,8 @@
 
 <br/>
 
+</div>
+
 ```bash
 # 1. On your VPS ($3/mo, no domain needed)
 maek server -p 8080
@@ -25,8 +27,6 @@ maek server -p 8080
 curl -fsSL http://<VPS-IP>:8080/_maek/install.sh | sh
 maek agent -s ws://<VPS-IP>:8080 -t http://localhost:3000
 ```
-
-</div>
 
 ---
 
