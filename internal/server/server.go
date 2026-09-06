@@ -60,6 +60,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(protocol.EndpointExit, s.handleExitService)
 	mux.HandleFunc(protocol.EndpointInstallSh, s.handleInstallScript)
 	mux.HandleFunc(protocol.EndpointInstallPs1, s.handleInstallScript)
+	mux.HandleFunc(protocol.EndpointLLMsTxt, s.handleLLMsTxt)
+	mux.HandleFunc(protocol.EndpointStyleCSS, s.handleStyleCSS)
+	mux.HandleFunc(protocol.EndpointAppJS, s.handleAppJS)
 	mux.HandleFunc(protocol.EndpointDownload, s.handleDownload)
 
 	// Fallback catch-all handler for Web UI and reverse-proxying
@@ -254,6 +257,53 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write([]byte(content))
+}
+
+// handleLLMsTxt serves an LLM/agent-facing quick-start guide (llms.txt
+// convention) with this server's URL dynamically templated in, so agents
+// can copy and run the commands verbatim.
+func (s *Server) handleLLMsTxt(w http.ResponseWriter, r *http.Request) {
+	data, err := GetStaticFile("llms.txt")
+	if err != nil {
+		http.Error(w, "llms.txt not found", http.StatusNotFound)
+		return
+	}
+
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	content := strings.ReplaceAll(string(data), "__SERVER_URL__", serverURL)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write([]byte(content))
+}
+
+// serveStaticAsset serves a file from the embedded static FS with the
+// given content type. Assets live under the reserved /_maek namespace so
+// they never collide with same-path assets of proxied services.
+func (s *Server) serveStaticAsset(w http.ResponseWriter, r *http.Request, name, contentType string) {
+	data, err := GetStaticFile(name)
+	if err != nil {
+		http.Error(w, "asset not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(data)
+}
+
+// handleStyleCSS serves the dashboard stylesheet.
+func (s *Server) handleStyleCSS(w http.ResponseWriter, r *http.Request) {
+	s.serveStaticAsset(w, r, "style.css", "text/css; charset=utf-8")
+}
+
+// handleAppJS serves the dashboard script.
+func (s *Server) handleAppJS(w http.ResponseWriter, r *http.Request) {
+	s.serveStaticAsset(w, r, "app.js", "application/javascript; charset=utf-8")
 }
 
 // handleDownload serves embedded client packages or falls back to GitHub releases.

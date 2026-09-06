@@ -1,0 +1,42 @@
+# maek
+
+> maek is a zero-auth HTTP tunnel server. It exposes a local application
+> (e.g. http://localhost:3000) at a public URL on this host - no account,
+> no API key.
+
+This server's base URL: __SERVER_URL__
+
+## Expose a local app
+
+1. Install the CLI:
+
+   macOS/Linux:
+     curl -fsSL __SERVER_URL__/_maek/install.sh | sh
+   Windows (PowerShell):
+     irm __SERVER_URL__/_maek/install.ps1 | iex
+   Or with Go 1.22+:
+     go install github.com/gosuda/maek/cmd/maek@latest
+
+2. Start an agent in the background and keep it running
+   (the tunnel exists only while this process is alive):
+
+   maek agent --server __SERVER_URL__ --name my-app --target http://localhost:3000
+
+   Flags: --name (display name) | --id (preferred id, max 32 chars)
+   | --desc (short description) | --target (local URL)
+
+3. Verify registration - poll until your service appears:
+
+   curl __SERVER_URL__/_maek/api/services
+   -> [{"id":"ab12cd","name":"my-app","connected_at":"..."}]
+
+4. Your app is now public:
+
+   - Browser URL: __SERVER_URL__/_maek/my-app
+   - Header routing (curl/API): curl -H "X-Maek-Service: ab12cd" __SERVER_URL__/
+
+## Notes
+
+- No auth anywhere. Closing the agent process closes the tunnel.
+- Browser URLs accept the service name or id: __SERVER_URL__/_maek/<name-or-id>
+- Source: https://github.com/gosuda/maek

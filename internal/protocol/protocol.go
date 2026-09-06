@@ -22,6 +22,9 @@ const (
 	EndpointThumb      = "/_maek/thumb"
 	EndpointInstallSh  = "/_maek/install.sh"
 	EndpointInstallPs1 = "/_maek/install.ps1"
+	EndpointLLMsTxt    = "/_maek/llms.txt"
+	EndpointStyleCSS   = "/_maek/style.css"
+	EndpointAppJS      = "/_maek/app.js"
 	EndpointDownload   = "/_maek/download"
 
 	IDLength    = 6
@@ -73,7 +76,7 @@ func SanitizePreferredID(id string) string {
 // IsReservedName checks if a name or ID conflicts with internal /_maek/* endpoints.
 func IsReservedName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "ws", "float.js", "float", "api", "version", "select", "thumb", "install.sh", "install.ps1", "download":
+	case "ws", "float.js", "float", "api", "version", "select", "thumb", "install.sh", "install.ps1", "download", "llms.txt", "style.css", "app.js":
 		return true
 	default:
 		return false
