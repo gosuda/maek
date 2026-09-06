@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>maek | HTTP Tunnels</title>
   <style>
+    :root {
+      --accent: #1d9bf0;
+      --accent-hover: #1a8cd8;
+      --accent-light: rgba(29, 155, 240, 0.1);
+      --accent-focus: rgba(29, 155, 240, 0.2);
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -28,8 +35,9 @@
       max-width: 640px;
       background: #ffffff;
       border: 1px solid #cfd9de;
+      border-top: 3px solid var(--accent);
       border-radius: 16px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -72,8 +80,8 @@
     }
 
     .version-tag:hover {
-      background: #cfd9de;
-      color: #0f1419;
+      background: var(--accent-light);
+      color: var(--accent);
     }
 
     .brand-text p {
@@ -125,7 +133,7 @@
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background: #0f1419;
+      background: var(--accent);
       color: #ffffff;
       font-size: 11px;
       font-weight: 800;
@@ -177,9 +185,14 @@
     }
 
     .os-tab.active {
-      background: #0f1419;
+      background: var(--accent);
       color: #ffffff;
-      border-color: #0f1419;
+      border-color: var(--accent);
+      box-shadow: 0 1px 3px rgba(29, 155, 240, 0.25);
+    }
+
+    .os-tab.active:hover {
+      background: var(--accent-hover);
     }
 
     .step-body {
@@ -197,13 +210,14 @@
     }
 
     .install-links a {
-      color: #1d9bf0;
+      color: var(--accent);
       text-decoration: none;
       font-weight: 600;
     }
 
     .install-links a:hover {
       text-decoration: underline;
+      color: var(--accent-hover);
     }
 
     .install-divider {
@@ -234,6 +248,11 @@
       letter-spacing: 0.5px;
     }
 
+    ::selection {
+      background: var(--accent-focus);
+      color: #0f1419;
+    }
+
     .input-field {
       border: 1px solid #cfd9de;
       border-radius: 8px;
@@ -247,8 +266,8 @@
     }
 
     .input-field:focus {
-      border-color: #1d9bf0;
-      box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.15);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-focus);
     }
 
     /* Multiline Code Box */
@@ -286,7 +305,8 @@
     }
 
     .cmd-copy-btn:hover {
-      background: #3a4146;
+      background: var(--accent);
+      border-color: var(--accent);
       color: #ffffff;
     }
 
@@ -387,6 +407,11 @@
       font-size: 13px;
       color: #536471;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      transition: color 0.15s ease;
+    }
+
+    .service-item:hover .service-id {
+      color: var(--accent);
     }
 
     .dot {
@@ -400,7 +425,7 @@
     }
 
     .connect-button {
-      background: #0f1419;
+      background: var(--accent);
       color: #ffffff;
       font-size: 13px;
       font-weight: 700;
@@ -408,12 +433,14 @@
       border-radius: 9999px;
       text-decoration: none;
       white-space: nowrap;
-      transition: background 0.15s ease;
+      transition: all 0.15s ease;
       flex-shrink: 0;
+      box-shadow: 0 1px 4px rgba(29, 155, 240, 0.3);
     }
 
     .connect-button:hover {
-      background: #272c30;
+      background: var(--accent-hover);
+      box-shadow: 0 2px 8px rgba(29, 155, 240, 0.45);
     }
 
     .service-desc {
@@ -463,6 +490,15 @@
       user-select: all;
     }
 
+    .curl-code a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .curl-code a:hover {
+      text-decoration: underline;
+    }
+
     .curl-copy-btn {
       background: #ffffff;
       border: 1px solid #cfd9de;
@@ -477,7 +513,9 @@
     }
 
     .curl-copy-btn:hover {
-      background: #eff3f4;
+      background: var(--accent-light);
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     /* Empty state inside feed */
@@ -506,7 +544,7 @@
 
     .footer-link:hover {
       text-decoration: underline;
-      color: #536471;
+      color: var(--accent);
     }
   </style>
 </head>
@@ -516,7 +554,7 @@
     <header class="header">
       <div class="brand-text">
         <div class="brand-title-row">
-          <h1>maek</h1>
+          <h1>maek<span style="color:var(--accent);">.</span></h1>
           <a href="/_maek/version" id="version-tag" class="version-tag" title="View version info">v...</a>
         </div>
         <p>Instant HTTP tunnels to private networks</p>
@@ -804,7 +842,7 @@
 
               <!-- Direct Service URL -->
               <div class="curl-snippet">
-                <code class="curl-code"><a href="${escapeHtml(directUrl)}" style="color:inherit;text-decoration:none;">${escapeHtml(directUrl)}</a></code>
+                <code class="curl-code"><a href="${escapeHtml(directUrl)}" target="_blank" rel="noopener">${escapeHtml(directUrl)}</a></code>
                 <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(directUrl)}')">Copy URL</button>
               </div>
 
