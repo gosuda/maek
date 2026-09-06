@@ -52,47 +52,22 @@ Most tunneling tools either lock you into monthly subscriptions, require account
 
 ## Key Features
 
-### Zero-Config Routing (No Wildcard DNS)
-No need to purchase domains or configure wildcard DNS (`*.domain.com`). 
-* **Direct URLs**: Share `http://<VPS-IP>:8080/_maek/my-app` or by ID `http://<VPS-IP>:8080/_maek/@k8x2p9`.
-* **Cookie Routing**: Visiting a direct URL or selecting an app in the catalog issues a lightweight session cookie (`maek_service=<id>`), routing all subsequent browser requests transparently.
-* **API / CLI Friendly**: Pass `X-Maek-Service: my-app` in `curl` or automated test scripts.
+### 1. Single-IP, Zero-DNS Multi-Tenant Routing
+Expose multiple private services through a single public VPS IP without purchasing custom domains, managing wildcard DNS (`*.domain.com`), or dealing with TLS certificates.
+* **3-Way Routing Engine**: Transparent session cookies for browsers, direct vanity URLs (`/_maek/:name`), and `X-Maek-Service` headers for APIs and automated scripts.
+* **Smart Messenger Previews**: Direct links serve automated OpenGraph cards with embedded thumbnails for Slack, Discord, and KakaoTalk bots.
+* **Isolated Floating Widget**: Injected into HTML via Shadow DOM with magnetic corner snapping and a one-click disconnect button.
 
-### Zero-Touch Auto-Scraping
-Just point `maek agent` to your local service:
-```bash
-maek agent -s ws://vps:8080 -t http://localhost:3000
-```
-`maek` inspects your local app and automatically extracts:
-- App name from `<title>`
-- Description from `<meta name="description">` or `og:description`
-- Favicon and app icon from `<link rel="icon">` or Apple Touch Icons
+### 2. Firewall-Piercing Yamux Multiplexing
+Bypass NATs and restrictive corporate firewalls with a single outbound WebSocket connection over standard ports (80/443)—no port forwarding or inbound firewall openings required.
+* **High-Throughput Streams**: Multiplexes concurrent HTTP requests and high-volume assets over a single persistent TCP tunnel.
+* **Full WebSocket & HMR Support**: Seamlessly proxies modern developer environments including **Next.js HMR**, **Vite**, Server-Sent Events (SSE), and live WebSockets.
+* **Resilient Auto-Reconnection**: Re-establishes dropped connections automatically with exponential backoff.
 
-### Rich Social & Messenger Previews
-When you paste a `maek` link into **Slack, Discord, KakaoTalk, Twitter/X, or Telegram**, crawler bots are automatically served dynamic OpenGraph metadata with embedded thumbnails (`/_maek/thumb?id=xxx`). Your team sees a rich preview card instead of a blank or redirected link.
-
-### Isolated Floating Widget (`float.js`)
-When browsing your tunneled app, a floating indicator is injected before `</body>`:
-* **Zero CSS conflicts**: Rendered inside a **Shadow DOM**.
-* **Magnetic drag-and-drop**: Snaps to the nearest screen corner and remembers its position in `localStorage`.
-* **Compact / Full mode**: Toggle between a minimal status dot and full service details.
-* **One-Click Disconnect**: Click **Exit ✕** anytime to clear your routing cookie and return to the catalog.
-
-### Self-Hosted Embedded Installers
-The `maek server` binary **embeds multi-platform client archives** (`go:embed`).
-* Client machines download install scripts directly from your server:
-  * **macOS / Linux**: `curl -fsSL http://<VPS-IP>:8080/_maek/install.sh | sh`
-  * **Windows**: `irm http://<VPS-IP>:8080/_maek/install.ps1 | iex`
-* **Zero dependency on `api.github.com`**: Works in private VPCs, company intranets, and restricted networks.
-
-### Twitter-Style Web Dashboard
-Open `http://<VPS-IP>:8080/` in your browser to experience:
-* Clean Twitter/X typography with **Twitter Blue** (`#1d9bf0`) accents.
-* **2-Step Onboarding**: Auto-detects your OS (macOS, Linux, Windows, Go) with one-click copy buttons and dynamic agent command generator.
-* Live real-time service feed with status indicators and direct `curl` snippets.
-
-### Yamux Multiplexing over WebSocket
-All traffic—concurrent HTTP requests, high-volume static assets, and full-duplex WebSockets (such as **Next.js HMR**, **Vite**, live chat, or web terminals)—is multiplexed over a single persistent outbound WebSocket connection.
+### 3. Zero-Touch, Self-Contained Deployment
+A pure Go static binary (~15MB, CGO-free) that requires zero configuration files, zero account sign-ups, and zero third-party dependencies.
+* **Autonomous Target Inspection**: The agent inspects your local target on startup to automatically extract the service title, description, and favicon without manual flags.
+* **Self-Hosted Embedded Installers**: The server embeds multi-platform client binaries (`go:embed`) and serves its own one-line install scripts (`curl ... | sh` or `irm ... | iex`), making it 100% operational in air-gapped networks without calling `api.github.com`.
 
 ---
 
