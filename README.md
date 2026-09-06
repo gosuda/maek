@@ -15,7 +15,7 @@
 [![Zero Config](https://img.shields.io/badge/DNS-Zero_Config-success?style=flat)](#zero-config-routing-no-wildcard-dns)
 [![Multiplexing](https://img.shields.io/badge/Tunnel-Yamux_over_WebSocket-purple?style=flat)](#architecture)
 
-<br/>
+</div>
 
 ```bash
 # 1. On your VPS ($3/mo, no domain needed)
@@ -25,8 +25,6 @@ maek server -p 8080
 curl -fsSL http://<VPS-IP>:8080/_maek/install.sh | sh
 maek agent -s ws://<VPS-IP>:8080 -t http://localhost:3000
 ```
-
-</div>
 
 ---
 
