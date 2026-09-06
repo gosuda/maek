@@ -603,7 +603,7 @@
         const initial = (svc.name || 'A').charAt(0).toUpperCase();
         const color = pickColor(svc.name || 'A');
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
-        const hasDesc = Boolean(svc.description && svc.description.trim());
+        const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(svc.name || svc.id)}`;
         const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" http://${host}/`;
 
         const avatarHtml = hasThumb 
@@ -631,16 +631,22 @@
                     <span class="service-time">${timeAgo(svc.connected_at)}</span>
                   </div>
                 </div>
-                <a class="connect-button" href="/_maek/select?id=${encodeURIComponent(svc.id)}">Connect &rarr;</a>
+                <a class="connect-button" href="/_maek/${encodeURIComponent(svc.name || svc.id)}">Connect &rarr;</a>
               </div>
 
               ${hasDesc ? `<div class="service-desc">${escapeHtml(svc.description)}</div>` : ''}
               ${mediaBoxHtml}
 
+              <!-- Direct Service URL -->
+              <div class="curl-snippet">
+                <code class="curl-code"><a href="${escapeHtml(directUrl)}" style="color:inherit;text-decoration:none;">${escapeHtml(directUrl)}</a></code>
+                <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(directUrl)}')">Copy URL</button>
+              </div>
+
               <!-- Copyable Curl Snippet Box -->
               <div class="curl-snippet">
                 <code class="curl-code">${escapeHtml(curlCmd)}</code>
-                <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(curlCmd)}')">Copy</button>
+                <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(curlCmd)}')">Copy cURL</button>
               </div>
             </div>
           </div>

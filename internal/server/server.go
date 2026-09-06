@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -216,10 +217,52 @@ func (s *Server) handleExitService(w http.ResponseWriter, r *http.Request) {
 
 // handleProxyOrCatalog decides whether to show the catalog or proxy to an agent.
 func (s *Server) handleProxyOrCatalog(w http.ResponseWriter, r *http.Request) {
-	// 1. Check custom header (priority for CLI / API)
+	// 1. Direct service URL access: /_maek/<service-name-or-id>[/subpath]
+	if strings.HasPrefix(r.URL.Path, "/_maek/") {
+		trimmed := strings.TrimPrefix(r.URL.Path, "/_maek/")
+		parts := strings.SplitN(trimmed, "/", 2)
+		rawKey := parts[0]
+
+		if rawKey != "" && !protocol.IsReservedName(rawKey) {
+			serviceKey, err := url.PathUnescape(rawKey)
+			if err != nil {
+				serviceKey = rawKey
+			}
+			serviceKey = strings.TrimSpace(serviceKey)
+
+			session, ok := s.registry.Get(serviceKey)
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprintf(w, "Service '%s' is not found or has disconnected. <a href=\"/\">Return to Catalog</a>", serviceKey)
+				return
+			}
+
+			subPath := "/"
+			if len(parts) > 1 && parts[1] != "" {
+				subPath = "/" + parts[1]
+			}
+			if r.URL.RawQuery != "" {
+				subPath += "?" + r.URL.RawQuery
+			}
+
+			// Issue routing cookie and redirect to target subpath
+			http.SetCookie(w, &http.Cookie{
+				Name:     protocol.CookieService,
+				Value:    session.Info.ID,
+				Path:     "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+
+			http.Redirect(w, r, subPath, http.StatusFound)
+			return
+		}
+	}
+
+	// 2. Check custom header (priority for CLI / API)
 	serviceKey := strings.TrimSpace(r.Header.Get(protocol.HeaderService))
 
-	// 2. Check session cookie
+	// 3. Check session cookie
 	if serviceKey == "" {
 		if cookie, err := r.Cookie(protocol.CookieService); err == nil {
 			serviceKey = strings.TrimSpace(cookie.Value)

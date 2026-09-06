@@ -65,3 +65,13 @@ func SanitizePreferredID(id string) string {
 	}
 	return sb.String()
 }
+
+// IsReservedName checks if a name or ID conflicts with internal /_maek/* endpoints.
+func IsReservedName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "ws", "float.js", "float", "api", "version", "select":
+		return true
+	default:
+		return false
+	}
+}

@@ -47,13 +47,16 @@ func (r *Registry) AllocateID(preferred string) (string, error) {
 	defer r.mu.Unlock()
 
 	clean := protocol.SanitizePreferredID(preferred)
+	if protocol.IsReservedName(clean) {
+		clean = "app-" + clean
+	}
 	if clean == "" {
 		for {
 			id, err := protocol.GenerateID()
 			if err != nil {
 				return "", err
 			}
-			if _, exists := r.services[id]; !exists {
+			if _, exists := r.services[id]; !exists && !protocol.IsReservedName(id) {
 				return id, nil
 			}
 		}
