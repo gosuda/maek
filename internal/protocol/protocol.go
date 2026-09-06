@@ -13,13 +13,16 @@ const (
 	HeaderMaekID   = "X-Maek-ID"
 	ReservedPrefix = "/_maek"
 
-	EndpointWS       = "/_maek/ws"
-	EndpointSelect   = "/_maek/select"
-	EndpointExit     = "/_maek"
-	EndpointFloatJS  = "/_maek/float.js"
-	EndpointServices = "/_maek/api/services"
-	EndpointVersion  = "/_maek/version"
-	EndpointThumb    = "/_maek/thumb"
+	EndpointWS         = "/_maek/ws"
+	EndpointSelect     = "/_maek/select"
+	EndpointExit       = "/_maek"
+	EndpointFloatJS    = "/_maek/float.js"
+	EndpointServices   = "/_maek/api/services"
+	EndpointVersion    = "/_maek/version"
+	EndpointThumb      = "/_maek/thumb"
+	EndpointInstallSh  = "/_maek/install.sh"
+	EndpointInstallPs1 = "/_maek/install.ps1"
+	EndpointDownload   = "/_maek/download"
 
 	IDLength    = 6
 	MaxIDLength = 32
@@ -70,7 +73,7 @@ func SanitizePreferredID(id string) string {
 // IsReservedName checks if a name or ID conflicts with internal /_maek/* endpoints.
 func IsReservedName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "ws", "float.js", "float", "api", "version", "select", "thumb":
+	case "ws", "float.js", "float", "api", "version", "select", "thumb", "install.sh", "install.ps1", "download":
 		return true
 	default:
 		return false

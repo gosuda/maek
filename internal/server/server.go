@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(protocol.EndpointThumb, s.handleThumb)
 	mux.HandleFunc(protocol.EndpointSelect, s.handleSelectService)
 	mux.HandleFunc(protocol.EndpointExit, s.handleExitService)
+	mux.HandleFunc(protocol.EndpointInstallSh, s.handleInstallScript)
+	mux.HandleFunc(protocol.EndpointInstallPs1, s.handleInstallScript)
+	mux.HandleFunc(protocol.EndpointDownload, s.handleDownload)
 
 	// Fallback catch-all handler for Web UI and reverse-proxying
 	mux.HandleFunc("/", s.handleProxyOrCatalog)
@@ -220,6 +224,95 @@ func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
+}
+
+// handleInstallScript serves install.sh or install.ps1 with dynamically templated server URL and version.
+func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
+	filename := "install.sh"
+	contentType := "text/x-shellscript; charset=utf-8"
+	if strings.HasSuffix(r.URL.Path, ".ps1") {
+		filename = "install.ps1"
+		contentType = "text/plain; charset=utf-8"
+	}
+
+	data, err := GetStaticFile(filename)
+	if err != nil {
+		http.Error(w, "Installer script not found", http.StatusNotFound)
+		return
+	}
+
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	content := string(data)
+	content = strings.ReplaceAll(content, "__SERVER_URL__", serverURL)
+	content = strings.ReplaceAll(content, "__VERSION__", version.Version)
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write([]byte(content))
+}
+
+// handleDownload serves embedded client packages or falls back to GitHub releases.
+func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	osName := strings.TrimSpace(r.URL.Query().Get("os"))
+	archName := strings.TrimSpace(r.URL.Query().Get("arch"))
+
+	// Normalize OS
+	switch strings.ToLower(osName) {
+	case "darwin", "mac", "macos", "osx":
+		osName = "Darwin"
+	case "windows", "win":
+		osName = "Windows"
+	default:
+		osName = "Linux"
+	}
+
+	// Normalize Arch
+	switch strings.ToLower(archName) {
+	case "arm64", "aarch64":
+		archName = "arm64"
+	default:
+		archName = "x86_64"
+	}
+
+	var filename, contentType string
+	if osName == "Windows" {
+		filename = "maek_Windows_x86_64.zip"
+		contentType = "application/zip"
+	} else {
+		filename = fmt.Sprintf("maek_%s_%s.tar.gz", osName, archName)
+		contentType = "application/gzip"
+	}
+
+	// 1. Check if binary archive is embedded in static/bin/
+	data, err := GetStaticFile("bin/" + filename)
+	if err == nil && len(data) > 0 {
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(data)
+		return
+	}
+
+	// 2. Fallback: 302 Redirect to GitHub Releases
+	ver := version.Version
+	if ver == "" || ver == "dev" {
+		ver = "0.1.0"
+	}
+	ver = strings.TrimPrefix(ver, "v")
+	releaseFilename := fmt.Sprintf("maek_%s_%s_%s", ver, osName, archName)
+	if osName == "Windows" {
+		releaseFilename = fmt.Sprintf("maek_%s_Windows_x86_64.zip", ver)
+	} else {
+		releaseFilename = releaseFilename + ".tar.gz"
+	}
+	githubURL := fmt.Sprintf("https://github.com/gosuda/maek/releases/download/v%s/%s", ver, releaseFilename)
+	http.Redirect(w, r, githubURL, http.StatusFound)
 }
 
 // isBot detects if an incoming request is from a social media crawler or bot.

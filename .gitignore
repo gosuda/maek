@@ -12,6 +12,7 @@
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Embedded client binaries
+internal/server/static/bin/*
+!internal/server/static/bin/placeholder.txt
+

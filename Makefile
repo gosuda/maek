@@ -5,14 +5,17 @@ MAIN_SRC=./cmd/maek
 
 all: build
 
-build:
+embed-binaries:
+	@./hack/embed-binaries.sh
+
+build: embed-binaries
 	go build -o $(BINARY_NAME) $(MAIN_SRC)
 
 test:
 	go test -v -count=1 ./...
 
 clean:
-	rm -rf $(BINARY_NAME) dist
+	rm -rf $(BINARY_NAME) dist internal/server/static/bin/maek_*
 
 check-release:
 	go tool goreleaser check

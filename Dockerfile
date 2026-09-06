@@ -1,7 +1,7 @@
 # Stage 1: Build binary
 FROM golang:alpine AS builder
 
-RUN apk add --no-cache ca-certificates tzdata git
+RUN apk add --no-cache ca-certificates tzdata git bash tar zip
 
 WORKDIR /src
 
@@ -16,6 +16,9 @@ COPY . .
 ARG VERSION=dev
 ARG COMMIT=none
 ARG DATE=unknown
+
+# Pre-compile embedded client binaries
+RUN ./hack/embed-binaries.sh
 
 # Statically link and strip binary
 RUN CGO_ENABLED=0 go build -trimpath \

@@ -109,24 +109,107 @@
       border-bottom: 1px solid #eff3f4;
     }
 
-    .guide-header {
-      margin-bottom: 14px;
+    /* Steps & OS Tabs */
+    .step-block {
+      margin-bottom: 6px;
     }
 
-    .guide-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #0f1419;
+    .step-header {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+      margin-bottom: 6px;
     }
 
-    .guide-desc {
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #0f1419;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0f1419;
+      letter-spacing: -0.2px;
+    }
+
+    .step-desc {
       font-size: 13px;
       color: #536471;
-      margin-top: 2px;
+      margin-bottom: 12px;
       line-height: 1.4;
+      margin-left: 28px;
+    }
+
+    .os-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      margin-left: 28px;
+      flex-wrap: wrap;
+    }
+
+    .os-tab {
+      background: #eff3f4;
+      border: 1px solid #cfd9de;
+      border-radius: 9999px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #536471;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .os-tab:hover {
+      background: #e1e8ed;
+      color: #0f1419;
+    }
+
+    .os-tab.active {
+      background: #0f1419;
+      color: #ffffff;
+      border-color: #0f1419;
+    }
+
+    .step-body {
+      margin-left: 28px;
+    }
+
+    .install-links {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #536471;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .install-links a {
+      color: #1d9bf0;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .install-links a:hover {
+      text-decoration: underline;
+    }
+
+    .install-divider {
+      height: 1px;
+      background: #eff3f4;
+      margin: 22px 0 20px 0;
     }
 
     /* Parameter Inputs */
@@ -444,35 +527,69 @@
       </div>
     </header>
 
-    <!-- Interactive Multiline Quick Start Command Generator -->
+    <!-- Quick Start: Step 1 (Install) & Step 2 (Connect) -->
     <section class="guide-section">
-      <div class="guide-header">
-        <div class="guide-title">How to connect a service</div>
-        <div class="guide-desc">Configure your parameters below to generate a ready-to-run terminal command:</div>
+      <!-- Step 1: Install maek CLI -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-num">1</span>
+          <span class="step-title">Install maek CLI</span>
+        </div>
+        <div class="step-desc">Run this command in your terminal to install the agent:</div>
+
+        <!-- OS Tabs -->
+        <div class="os-tabs">
+          <button class="os-tab" id="tab-macos" onclick="selectOSTab('macos')">macOS</button>
+          <button class="os-tab" id="tab-linux" onclick="selectOSTab('linux')">Linux</button>
+          <button class="os-tab" id="tab-windows" onclick="selectOSTab('windows')">Windows</button>
+          <button class="os-tab" id="tab-go" onclick="selectOSTab('go')">Go</button>
+        </div>
+
+        <!-- Install Command Box -->
+        <div class="step-body">
+          <div class="cmd-wrapper">
+            <pre class="cmd-box" id="install-cmd-output" style="padding-right: 80px;"></pre>
+            <button class="cmd-copy-btn" id="install-copy-btn" onclick="copyInstallCmd()">Copy</button>
+          </div>
+          <div class="install-links" id="install-direct-links"></div>
+        </div>
       </div>
 
-      <div class="input-grid">
-        <div class="input-group">
-          <label class="input-label" for="param-name">Service Name (optional)</label>
-          <input class="input-field" id="param-name" type="text" placeholder="Auto-detected from target" oninput="updateCommand()" />
-        </div>
-        <div class="input-group">
-          <label class="input-label" for="param-target">Target URL</label>
-          <input class="input-field" id="param-target" type="text" value="http://localhost:3000" placeholder="e.g. http://localhost:3000" oninput="updateCommand()" />
-        </div>
-        <div class="input-group">
-          <label class="input-label" for="param-id">Preferred ID (optional)</label>
-          <input class="input-field" id="param-id" type="text" placeholder="e.g. custom-id" oninput="updateCommand()" />
-        </div>
-        <div class="input-group">
-          <label class="input-label" for="param-desc">Description (optional)</label>
-          <input class="input-field" id="param-desc" type="text" placeholder="e.g. Local dev server" oninput="updateCommand()" />
-        </div>
-      </div>
+      <div class="install-divider"></div>
 
-      <div class="cmd-wrapper">
-        <pre class="cmd-box" id="cmd-output"></pre>
-        <button class="cmd-copy-btn" id="cmd-copy-btn" onclick="copyAgentCmd()">Copy</button>
+      <!-- Step 2: Connect a service -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-num">2</span>
+          <span class="step-title">Connect your service</span>
+        </div>
+        <div class="step-desc">Configure your parameters below and run the agent:</div>
+
+        <div class="step-body">
+          <div class="input-grid">
+            <div class="input-group">
+              <label class="input-label" for="param-name">Service Name (optional)</label>
+              <input class="input-field" id="param-name" type="text" placeholder="Auto-detected from target" oninput="updateCommand()" />
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="param-target">Target URL</label>
+              <input class="input-field" id="param-target" type="text" value="http://localhost:3000" placeholder="e.g. http://localhost:3000" oninput="updateCommand()" />
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="param-id">Preferred ID (optional)</label>
+              <input class="input-field" id="param-id" type="text" placeholder="e.g. custom-id" oninput="updateCommand()" />
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="param-desc">Description (optional)</label>
+              <input class="input-field" id="param-desc" type="text" placeholder="e.g. Local dev server" oninput="updateCommand()" />
+            </div>
+          </div>
+
+          <div class="cmd-wrapper">
+            <pre class="cmd-box" id="cmd-output"></pre>
+            <button class="cmd-copy-btn" id="cmd-copy-btn" onclick="copyAgentCmd()">Copy</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -524,6 +641,52 @@
       return str.replace(/[&<>"']/g, m => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       })[m]);
+    }
+
+    // OS Detection & Installer Tab Handler
+    let currentOS = 'macos';
+
+    function detectOS() {
+      const ua = (navigator.userAgent || '').toLowerCase();
+      if (ua.includes('mac') || ua.includes('darwin')) return 'macos';
+      if (ua.includes('win')) return 'windows';
+      if (ua.includes('linux') || ua.includes('x11')) return 'linux';
+      return 'macos';
+    }
+
+    function selectOSTab(os) {
+      currentOS = os;
+      ['macos', 'linux', 'windows', 'go'].forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if (el) el.classList.toggle('active', t === os);
+      });
+
+      const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
+      const cmdBox = document.getElementById('install-cmd-output');
+      const linksBox = document.getElementById('install-direct-links');
+
+      if (os === 'macos') {
+        cmdBox.textContent = `curl -fsSL ${origin}/_maek/install.sh | sh`;
+        linksBox.innerHTML = `Direct download: <a href="${origin}/_maek/download?os=Darwin&arch=arm64">Apple Silicon (arm64)</a> · <a href="${origin}/_maek/download?os=Darwin&arch=x86_64">Intel (x86_64)</a>`;
+      } else if (os === 'linux') {
+        cmdBox.textContent = `curl -fsSL ${origin}/_maek/install.sh | sh`;
+        linksBox.innerHTML = `Direct download: <a href="${origin}/_maek/download?os=Linux&arch=x86_64">x86_64</a> · <a href="${origin}/_maek/download?os=Linux&arch=arm64">arm64</a>`;
+      } else if (os === 'windows') {
+        cmdBox.textContent = `irm ${origin}/_maek/install.ps1 | iex`;
+        linksBox.innerHTML = `Direct download: <a href="${origin}/_maek/download?os=Windows&arch=x86_64">Windows x86_64 (.zip)</a>`;
+      } else if (os === 'go') {
+        cmdBox.textContent = `go install github.com/gosuda/maek/cmd/maek@latest`;
+        linksBox.innerHTML = `Requires Go 1.22+ · <a href="https://github.com/gosuda/maek/releases" target="_blank" rel="noopener">GitHub Releases &rarr;</a>`;
+      }
+    }
+
+    function copyInstallCmd() {
+      const text = document.getElementById('install-cmd-output').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('install-copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+      });
     }
 
     // Interactive Command Builder
@@ -675,7 +838,8 @@
       }
     }
 
-    // Initialize command, version, and polling
+    // Initialize OS tab, command, version, and polling
+    selectOSTab(detectOS());
     updateCommand();
     fetchVersion();
     fetchServices();
