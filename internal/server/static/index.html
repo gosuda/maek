@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>maek | Tunnel Catalog</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(22, 27, 46, 0.75);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(56, 189, 248, 0.4);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --green: #22c55e;
+      --green-glow: rgba(34, 197, 94, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.06) 0px, transparent 50%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px;
+      width: 100%;
+      flex: 1;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      color: #fff;
+      font-weight: 800;
+      font-size: 20px;
+      padding: 6px 14px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px var(--accent-glow);
+      letter-spacing: -0.5px;
+    }
+
+    .title-group h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #86efac;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .services-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .service-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+    }
+
+    .service-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+      transform: translateY(-2px);
+    }
+
+    .service-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .service-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .service-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .id-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 8px;
+      border-radius: 6px;
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .service-target {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+
+    .service-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .connect-btn {
+      background: linear-gradient(135deg, #0284c7, #0ea5e9);
+      color: white;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+    }
+
+    .connect-btn:hover {
+      background: linear-gradient(135deg, #0369a1, #0284c7);
+      box-shadow: 0 6px 18px rgba(14, 165, 233, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .empty-state {
+      background: var(--card-bg);
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      padding: 48px 32px;
+      text-align: center;
+    }
+
+    .empty-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .empty-desc {
+      color: var(--text-muted);
+      font-size: 14px;
+      max-width: 500px;
+      margin: 0 auto 24px auto;
+      line-height: 1.5;
+    }
+
+    .code-block {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 13px;
+      color: #38bdf8;
+      display: inline-block;
+      text-align: left;
+      user-select: all;
+    }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-group">
+        <div class="logo-badge">maek</div>
+        <div class="title-group">
+          <h1>Tunnel Gateway</h1>
+          <p>Expose private local services securely via WebSocket & Yamux</p>
+        </div>
+      </div>
+      <div class="live-indicator">
+        <div class="pulse-dot"></div>
+        <span id="live-count">0 connected</span>
+      </div>
+    </header>
+
+    <div class="section-title">Active Services</div>
+
+    <div id="services-container" class="services-grid">
+      <!-- Dynamically populated or empty state -->
+    </div>
+  </div>
+
+  <footer>
+    Powered by <a href="https://github.com/gosuda/maek" target="_blank" rel="noopener">maek</a> &bull; HTTP Tunneling Gateway
+  </footer>
+
+  <script>
+    async function fetchServices() {
+      try {
+        const res = await fetch('/_maek/api/services');
+        if (!res.ok) return;
+        const services = await res.json();
+        renderServices(services);
+      } catch (e) {
+        console.error('Failed to fetch services:', e);
+      }
+    }
+
+    function renderServices(services) {
+      const container = document.getElementById('services-container');
+      const countLabel = document.getElementById('live-count');
+
+      countLabel.textContent = `${services.length} connected`;
+
+      if (!services || services.length === 0) {
+        const host = window.location.host;
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-title">No Active Services Connected</div>
+            <div class="empty-desc">
+              Run <code>maek agent</code> in your private network to establish a tunnel and expose your local HTTP service.
+            </div>
+            <div class="code-block">
+              maek agent --server ws://${host} --name my-app --target http://localhost:3000
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = services.map(svc => `
+        <div class="service-card">
+          <div class="service-info">
+            <div class="service-header">
+              <span class="service-name">${escapeHtml(svc.name)}</span>
+              <span class="id-tag">${escapeHtml(svc.id)}</span>
+            </div>
+            <div class="service-target">Target: ${escapeHtml(svc.target || 'http://localhost')}</div>
+          </div>
+          <div class="service-actions">
+            <a class="connect-btn" href="/_maek/select?id=${encodeURIComponent(svc.id)}">Open Service &rarr;</a>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[m]);
+    }
+
+    // Initial fetch & auto poll
+    fetchServices();
+    setInterval(fetchServices, 3000);
+  </script>
+</body>
+</html>
