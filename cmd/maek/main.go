@@ -13,12 +13,7 @@ import (
 
 	"github.com/gosuda/maek/internal/agent"
 	"github.com/gosuda/maek/internal/server"
-)
-
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	"github.com/gosuda/maek/internal/version"
 )
 
 func main() {
@@ -35,7 +30,7 @@ func main() {
 	case "agent", "connect":
 		runAgent(os.Args[2:])
 	case "version", "-v", "--version":
-		fmt.Printf("maek version %s (commit: %s, date: %s)\n", version, commit, date)
+		fmt.Println(version.String())
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -73,7 +68,7 @@ Examples:
 
   # Explicit naming and custom ID
   maek agent -s ws://1.2.3.4:8080 -n dev-app -i my-dev -t http://localhost:3000
-`, version)
+`, version.Version)
 }
 
 func runServer(args []string) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/gosuda/maek/internal/protocol"
+	"github.com/gosuda/maek/internal/version"
 	"github.com/hashicorp/yamux"
 )
 
@@ -49,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(protocol.EndpointWS, s.handleAgentWebSocket)
 	mux.HandleFunc(protocol.EndpointFloatJS, s.handleFloatJS)
 	mux.HandleFunc(protocol.EndpointServices, s.handleServicesAPI)
+	mux.HandleFunc(protocol.EndpointVersion, s.handleVersion)
 	mux.HandleFunc(protocol.EndpointSelect, s.handleSelectService)
 	mux.HandleFunc(protocol.EndpointExit, s.handleExitService)
 
@@ -158,6 +160,20 @@ func (s *Server) handleServicesAPI(w http.ResponseWriter, r *http.Request) {
 	services := s.registry.List()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(services)
+}
+
+// handleVersion returns the build version and commit info in JSON or plain text.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	info := version.Get()
+	if r.Header.Get("Accept") == "text/plain" || r.URL.Query().Get("format") == "text" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, version.String())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(info)
 }
 
 // handleSelectService sets the routing cookie and redirects to /.

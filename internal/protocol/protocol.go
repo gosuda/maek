@@ -18,6 +18,7 @@ const (
 	EndpointExit     = "/_maek"
 	EndpointFloatJS  = "/_maek/float.js"
 	EndpointServices = "/_maek/api/services"
+	EndpointVersion  = "/_maek/version"
 
 	IDLength    = 6
 	MaxIDLength = 32
