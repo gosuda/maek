@@ -14,17 +14,19 @@ import (
 )
 
 type ScrapedMeta struct {
-	Title       string
-	OGDesc      string
-	MetaDesc    string
-	OGImage     string
-	AppleIcon   string
-	Favicon     string
-	FinalURL    *url.URL
+	OGSiteName string
+	OGTitle    string
+	Title      string
+	OGDesc     string
+	MetaDesc   string
+	OGImage    string
+	AppleIcon  string
+	Favicon    string
+	FinalURL   *url.URL
 }
 
 // ScrapeTargetMetadata attempts to extract Open Graph metadata, title, and favicon from the target.
-func ScrapeTargetMetadata(targetURL *url.URL) (desc string, thumb string) {
+func ScrapeTargetMetadata(targetURL *url.URL) (name, desc, thumb string) {
 	client := &http.Client{
 		Timeout: 3 * time.Second,
 		Transport: &http.Transport{
@@ -42,14 +44,14 @@ func ScrapeTargetMetadata(targetURL *url.URL) (desc string, thumb string) {
 
 	req, err := http.NewRequest("GET", targetURL.String(), nil)
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	req.Header.Set("User-Agent", "maek-agent/metadata-scraper")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", ""
+		return fallbackNameFromURL(targetURL), "", ""
 	}
 	defer resp.Body.Close()
 
@@ -60,19 +62,34 @@ func ScrapeTargetMetadata(targetURL *url.URL) (desc string, thumb string) {
 
 	cType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if !strings.Contains(cType, "text/html") && !strings.Contains(cType, "application/xhtml+xml") {
-		return "", ""
+		return fallbackNameFromURL(targetURL), "", ""
 	}
 
 	// Read up to 256KB of HTML
 	lr := io.LimitReader(resp.Body, 256*1024)
 	meta := parseHTMLMeta(lr, finalURL)
 
-	// 1. Resolve Description: OG Description > Meta Description > Title
+	// 1. Resolve Name: OG Site Name > OG Title > Title > Hostname
+	if meta.OGSiteName != "" {
+		name = meta.OGSiteName
+	} else if meta.OGTitle != "" {
+		name = meta.OGTitle
+	} else if meta.Title != "" {
+		name = meta.Title
+	} else {
+		name = fallbackNameFromURL(targetURL)
+	}
+
+	if len(name) > 40 {
+		name = strings.TrimSpace(name[:37]) + "..."
+	}
+
+	// 2. Resolve Description: OG Description > Meta Description > Title (if different from name)
 	if meta.OGDesc != "" {
 		desc = meta.OGDesc
 	} else if meta.MetaDesc != "" {
 		desc = meta.MetaDesc
-	} else if meta.Title != "" {
+	} else if meta.Title != "" && meta.Title != name {
 		desc = meta.Title
 	}
 
@@ -80,7 +97,7 @@ func ScrapeTargetMetadata(targetURL *url.URL) (desc string, thumb string) {
 		desc = strings.TrimSpace(desc[:157]) + "..."
 	}
 
-	// 2. Resolve Thumbnail / Icon: OG Image > Apple Touch Icon > Favicon
+	// 3. Resolve Thumbnail / Icon: OG Image > Apple Touch Icon > Favicon
 	rawIconURL := ""
 	if meta.OGImage != "" {
 		rawIconURL = meta.OGImage
@@ -94,7 +111,21 @@ func ScrapeTargetMetadata(targetURL *url.URL) (desc string, thumb string) {
 		thumb = fetchIconAsDataURI(client, finalURL, rawIconURL)
 	}
 
-	return desc, thumb
+	return name, desc, thumb
+}
+
+func fallbackNameFromURL(u *url.URL) string {
+	h := u.Hostname()
+	if h == "localhost" || h == "127.0.0.1" {
+		if p := u.Port(); p != "" {
+			return "app-" + p
+		}
+		return "app"
+	}
+	if h != "" {
+		return h
+	}
+	return "app"
 }
 
 // parseHTMLMeta tokenizes HTML and extracts Open Graph, title, and link tags.
@@ -133,7 +164,11 @@ func parseHTMLMeta(r io.Reader, baseURL *url.URL) ScrapedMeta {
 				}
 
 				if content != "" {
-					if (prop == "og:description" || name == "og:description") && meta.OGDesc == "" {
+					if (prop == "og:site_name" || name == "og:site_name") && meta.OGSiteName == "" {
+						meta.OGSiteName = content
+					} else if (prop == "og:title" || name == "og:title") && meta.OGTitle == "" {
+						meta.OGTitle = content
+					} else if (prop == "og:description" || name == "og:description") && meta.OGDesc == "" {
 						meta.OGDesc = content
 					} else if name == "description" && meta.MetaDesc == "" {
 						meta.MetaDesc = content

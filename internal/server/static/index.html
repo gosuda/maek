@@ -406,8 +406,8 @@
 
       <div class="input-grid">
         <div class="input-group">
-          <label class="input-label" for="param-name">Service Name</label>
-          <input class="input-field" id="param-name" type="text" value="my-app" placeholder="e.g. my-app" oninput="updateCommand()" />
+          <label class="input-label" for="param-name">Service Name (optional)</label>
+          <input class="input-field" id="param-name" type="text" placeholder="Auto-detected from target" oninput="updateCommand()" />
         </div>
         <div class="input-group">
           <label class="input-label" for="param-target">Target URL</label>
@@ -477,17 +477,19 @@
     // Interactive Command Builder
     function updateCommand() {
       const host = window.location.host || '127.0.0.1:8080';
-      const name = document.getElementById('param-name').value.trim() || 'my-app';
+      const name = document.getElementById('param-name').value.trim();
       const target = document.getElementById('param-target').value.trim() || 'http://localhost:3000';
       const id = document.getElementById('param-id').value.trim();
       const desc = document.getElementById('param-desc').value.trim();
 
       let lines = [
         'maek agent \\',
-        `  --server ws://${host} \\`,
-        `  --name ${name} \\`
+        `  --server ws://${host} \\`
       ];
 
+      if (name) {
+        lines.push(`  --name ${name} \\`);
+      }
       if (id) {
         lines.push(`  --id ${id} \\`);
       }

@@ -40,12 +40,6 @@ func NewAgent(cfg Config) (*Agent, error) {
 	if cfg.ServerURL == "" {
 		return nil, fmt.Errorf("server URL is required")
 	}
-	if cfg.Name == "" {
-		cfg.Name = "app"
-	}
-	if cfg.PreferredID == "" {
-		cfg.PreferredID = cfg.Name
-	}
 	if cfg.Target == "" {
 		cfg.Target = "http://localhost:8080"
 	}
@@ -63,9 +57,13 @@ func NewAgent(cfg Config) (*Agent, error) {
 
 	isTLS := parsedTarget.Scheme == "https"
 
-	// Auto-scrape metadata if description or thumbnail is missing
-	if cfg.Description == "" || cfg.Thumbnail == "" {
-		scrapedDesc, scrapedThumb := ScrapeTargetMetadata(parsedTarget)
+	// Auto-scrape metadata if name, description, or thumbnail is missing
+	if cfg.Name == "" || cfg.Description == "" || cfg.Thumbnail == "" {
+		scrapedName, scrapedDesc, scrapedThumb := ScrapeTargetMetadata(parsedTarget)
+		if cfg.Name == "" && scrapedName != "" {
+			cfg.Name = scrapedName
+			log.Printf("[maek-agent] Auto-detected service name from target: %q", scrapedName)
+		}
 		if cfg.Description == "" && scrapedDesc != "" {
 			cfg.Description = scrapedDesc
 			log.Printf("[maek-agent] Auto-detected description from target: %q", scrapedDesc)
@@ -74,6 +72,13 @@ func NewAgent(cfg Config) (*Agent, error) {
 			cfg.Thumbnail = scrapedThumb
 			log.Printf("[maek-agent] Auto-detected icon/thumbnail from target")
 		}
+	}
+
+	if cfg.Name == "" {
+		cfg.Name = "app"
+	}
+	if cfg.PreferredID == "" {
+		cfg.PreferredID = cfg.Name
 	}
 
 	return &Agent{
@@ -115,6 +120,11 @@ func (a *Agent) Start(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// Config returns a copy of the agent configuration.
+func (a *Agent) Config() Config {
+	return a.cfg
 }
 
 // Stop stops the agent.

@@ -17,6 +17,7 @@ func TestScrapeTargetMetadata(t *testing.T) {
 <!DOCTYPE html>
 <html>
 <head>
+	<meta property="og:site_name" content="My Great App">
 	<title>Fallback Title</title>
 	<meta property="og:description" content="Awesome OG Description">
 	<meta property="og:image" content="/images/og.png">
@@ -33,8 +34,11 @@ func TestScrapeTargetMetadata(t *testing.T) {
 	defer ogServer.Close()
 
 	ogURL, _ := url.Parse(ogServer.URL)
-	desc, thumb := ScrapeTargetMetadata(ogURL)
+	name, desc, thumb := ScrapeTargetMetadata(ogURL)
 
+	if name != "My Great App" {
+		t.Errorf("expected 'My Great App', got %q", name)
+	}
 	if desc != "Awesome OG Description" {
 		t.Errorf("expected 'Awesome OG Description', got %q", desc)
 	}
@@ -65,12 +69,13 @@ func TestScrapeTargetMetadata(t *testing.T) {
 	defer fallbackServer.Close()
 
 	fbURL, _ := url.Parse(fallbackServer.URL)
-	desc2, thumb2 := ScrapeTargetMetadata(fbURL)
+	name2, desc2, thumb2 := ScrapeTargetMetadata(fbURL)
 
-	if desc2 != "Clean Fallback Title" {
-		t.Errorf("expected 'Clean Fallback Title', got %q", desc2)
+	if name2 != "Clean Fallback Title" {
+		t.Errorf("expected 'Clean Fallback Title', got %q", name2)
 	}
 	if !strings.HasPrefix(thumb2, "data:image/svg+xml;base64,") {
 		t.Errorf("expected thumb to be svg data URI, got %q", thumb2)
 	}
+	_ = desc2
 }
