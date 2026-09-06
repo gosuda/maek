@@ -692,6 +692,7 @@
     // Interactive Command Builder
     function updateCommand() {
       const host = window.location.host || '127.0.0.1:8080';
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const name = document.getElementById('param-name').value.trim();
       const target = document.getElementById('param-target').value.trim() || 'http://localhost:3000';
       const id = document.getElementById('param-id').value.trim();
@@ -699,7 +700,7 @@
 
       let lines = [
         'maek agent \\',
-        `  --server ws://${host} \\`
+        `  --server ${wsProto}//${host} \\`
       ];
 
       if (name) {
@@ -768,7 +769,7 @@
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
         const hasDesc = Boolean(svc.description && svc.description.trim());
         const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(svc.name || svc.id)}`;
-        const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" http://${host}/`;
+        const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" ${window.location.protocol}//${host}/`;
 
         const avatarHtml = hasThumb 
           ? `<img src="${escapeHtml(svc.thumbnail)}" alt="${escapeHtml(svc.name)}" onerror="this.parentElement.innerHTML='${initial}'" />`
