@@ -96,28 +96,40 @@ All traffic—concurrent HTTP requests, high-volume static assets, and full-dupl
 
 ## 🏗️ Architecture
 
-```
-                                  +------------------------------------+
-                                  |            maek server             |
-                                  |          (Public VPS / IP)         |
-                                  +------------------------------------+
-                                    |            |                  |
-                   GET / (No Cookie)|            | GET / (Cookie)   | WebSocket (/_maek/ws)
-                                    v            v                  |
-           [Web UI: Service Catalog]    [Reverse Proxy Router]      |
-                                                 |                  |
-                                           Yamux Streams            v
-                                    +------------------------------------+
-                                    |             maek-agent             |
-                                    |         (Private Network)          |
-                                    +------------------------------------+
-                                                     |
-                                            HTTP / TCP / WebSockets
-                                                     v
-                                    +------------------------------------+
-                                    |        Target Local Service        |
-                                    |     (Next.js, Vite, FastAPI, ...)  |
-                                    +------------------------------------+
+```mermaid
+flowchart TD
+    subgraph Clients ["🌐 Clients & Internet"]
+        Browser["🖥️ Browser"]
+        Curl["💻 CLI / curl"]
+        Bot["🤖 Messenger Bot<br/>(Slack, Discord, Kakao)"]
+    end
+
+    subgraph VPS ["☁️ Public VPS — maek server"]
+        Router["🔀 Reverse Proxy Router"]
+        Catalog["🎨 Web Dashboard<br/>(Service Catalog)"]
+        OG["🖼️ OpenGraph Engine<br/>(Rich Link Previews)"]
+        YamuxServer["⚡ Yamux Multiplexer"]
+    end
+
+    subgraph Local ["🔒 Private Network — Localhost"]
+        Agent["📡 maek agent"]
+        Target["🚀 Target Service<br/>(Next.js, Vite, FastAPI, ...)"]
+    end
+
+    %% Client Traffic Flows
+    Browser -- "GET / (No Cookie)" --> Catalog
+    Browser -- "GET / (Cookie: maek_service)" --> Router
+    Browser -- "GET /_maek/:name (Direct URL)" --> Router
+    Curl -- "Header: X-Maek-Service" --> Router
+    Bot -- "Crawl /_maek/:name" --> OG
+
+    %% Server Internal Routing
+    Router --> YamuxServer
+
+    %% Tunnel & Local Forwarding
+    Agent -. "Outbound WebSocket (/_maek/ws)" .-> YamuxServer
+    YamuxServer <== "Multiplexed Yamux Streams<br/>(HTTP & WebSockets)" ==> Agent
+    Agent <== "Forward HTTP / TCP" ==> Target
 ```
 
 ---
