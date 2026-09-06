@@ -233,6 +233,17 @@
   exitLink.href = '/_maek';
   exitLink.textContent = '✕';
   exitLink.title = 'Exit and return to maek catalog';
+  // Force a real navigation: SPA routers of the proxied app intercept
+  // same-origin anchor clicks, which would prevent the exit endpoint
+  // (cookie reset + redirect home) from ever being reached.
+  exitLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Cache-busted replace(): bypasses SPA routers and HTTP cache (and
+    // most service-worker fetch handlers matching exact URLs), while
+    // keeping the /_maek hop out of the back-button history.
+    window.location.replace('/_maek?e=' + Date.now());
+  });
 
   function updateModeUI(mode) {
     currentMode = mode;
