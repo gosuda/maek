@@ -90,14 +90,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // handleAgentWebSocket handles incoming agent WebSocket connections.
+// New agents use the frame-based handshake (register/registered/start
+// control messages, see protocol.AgentMessage). Agents that still send
+// metadata via query parameters fall back to the legacy path.
 func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
+	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
+
+	if name != "" || id != "" || desc != "" || thumb != "" {
+		s.serveLegacyAgent(w, r, name, id, desc, thumb)
+		return
+	}
+	s.serveFrameAgent(w, r)
+}
+
+// serveLegacyAgent implements the pre-frame handshake: metadata in query
+// params, assigned ID in the X-Maek-ID response header, yamux right away.
+func (s *Server) serveLegacyAgent(w http.ResponseWriter, r *http.Request, name, preferredID, desc, thumb string) {
 	if name == "" {
 		name = "app"
 	}
-	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
-	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
-	preferredID := strings.TrimSpace(r.URL.Query().Get("id"))
 	if preferredID == "" {
 		preferredID = name
 	}
@@ -119,6 +133,94 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveAgentSession(r, wsConn, protocol.ServiceInfo{
+		ID:          id,
+		Name:        name,
+		Description: desc,
+		Thumbnail:   thumb,
+		ConnectedAt: time.Now(),
+		RemoteAddr:  r.RemoteAddr,
+	})
+}
+
+// serveFrameAgent implements the control-message handshake:
+//
+//	agent -> server: {"type":"register","service":{...}}
+//	server -> agent: {"type":"registered","id":"..."}
+//	agent -> server: {"type":"start"}
+//
+// followed by the yamux data plane. The register/start state machine leaves
+// room for multiple registrations per connection in the future; today a
+// second "register" before "start" is rejected.
+func (s *Server) serveFrameAgent(w http.ResponseWriter, r *http.Request) {
+	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		log.Printf("[maek-server] WebSocket handshake failed: %v", err)
+		return
+	}
+	defer wsConn.CloseNow()
+
+	hsCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	fail := func(code, msg string) {
+		_ = protocol.WriteAgentMessage(context.Background(), wsConn, protocol.AgentMessage{
+			Type: protocol.MsgTypeError, Code: code, Message: msg,
+		})
+		_ = wsConn.Close(websocket.StatusPolicyViolation, code)
+	}
+
+	// 1. Expect the registration frame.
+	reg, err := protocol.ReadAgentMessage(hsCtx, wsConn)
+	if err != nil || reg.Type != protocol.MsgTypeRegister || reg.Service == nil {
+		fail("invalid-register", "expected a register message")
+		return
+	}
+	svc := *reg.Service
+	name := strings.TrimSpace(svc.Name)
+	if name == "" {
+		name = "app"
+	}
+	preferredID := strings.TrimSpace(svc.ID)
+	if preferredID == "" {
+		preferredID = name
+	}
+
+	id, err := s.registry.AllocateID(preferredID)
+	if err != nil {
+		fail("id-allocation", "failed to allocate service ID")
+		return
+	}
+
+	// 2. Acknowledge with the assigned ID.
+	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
+		Type: protocol.MsgTypeRegistered, ID: id,
+	}); err != nil {
+		return
+	}
+
+	// 3. Expect "start" to switch to the data plane.
+	msg, err := protocol.ReadAgentMessage(hsCtx, wsConn)
+	if err != nil || msg.Type != protocol.MsgTypeStart {
+		fail("expected-start", "expected a start message")
+		return
+	}
+
+	s.serveAgentSession(r, wsConn, protocol.ServiceInfo{
+		ID:          id,
+		Name:        name,
+		Description: strings.TrimSpace(svc.Description),
+		Thumbnail:   strings.TrimSpace(svc.Thumbnail),
+		ConnectedAt: time.Now(),
+		RemoteAddr:  r.RemoteAddr,
+	})
+}
+
+// serveAgentSession upgrades an accepted WebSocket to the yamux data plane
+// and registers the service until the connection closes.
+func (s *Server) serveAgentSession(r *http.Request, wsConn *websocket.Conn, info protocol.ServiceInfo) {
 	netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
 
 	yamuxCfg := yamux.DefaultConfig()
@@ -130,28 +232,19 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := protocol.ServiceInfo{
-		ID:          id,
-		Name:        name,
-		Description: desc,
-		Thumbnail:   thumb,
-		ConnectedAt: time.Now(),
-		RemoteAddr:  r.RemoteAddr,
-	}
-
-	_, err = s.registry.Register(info, session, BuildResponseModifier(id, name))
+	_, err = s.registry.Register(info, session, BuildResponseModifier(info.ID, info.Name))
 	if err != nil {
 		log.Printf("[maek-server] Failed to register service: %v", err)
 		_ = session.Close()
 		return
 	}
 
-	log.Printf("[maek-server] Registered agent '%s' (ID: %s) from %s", name, id, r.RemoteAddr)
+	log.Printf("[maek-server] Registered agent '%s' (ID: %s) from %s", info.Name, info.ID, r.RemoteAddr)
 
 	// Block until connection is closed
 	<-session.CloseChan()
-	s.registry.Unregister(id)
-	log.Printf("[maek-server] Agent '%s' (ID: %s) disconnected", name, id)
+	s.registry.Unregister(info.ID)
+	log.Printf("[maek-server] Agent '%s' (ID: %s) disconnected", info.Name, info.ID)
 }
 
 // handleFloatJS serves the floating widget JavaScript.

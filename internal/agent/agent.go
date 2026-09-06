@@ -149,19 +149,9 @@ func (a *Agent) buildWebSocketURL() string {
 		srv += protocol.EndpointWS
 	}
 
-	q := url.Values{}
-	q.Set("name", a.cfg.Name)
-	if a.cfg.PreferredID != "" {
-		q.Set("id", a.cfg.PreferredID)
-	}
-	if a.cfg.Description != "" {
-		q.Set("desc", a.cfg.Description)
-	}
-	if a.cfg.Thumbnail != "" {
-		q.Set("thumb", a.cfg.Thumbnail)
-	}
-
-	return srv + "?" + q.Encode()
+	// Service metadata travels in control frames after the WebSocket is
+	// established (protocol.AgentMessage), not in the URL.
+	return srv
 }
 
 func (a *Agent) connectAndServe(ctx context.Context) error {
@@ -171,17 +161,46 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	wsConn, resp, err := websocket.Dial(dialCtx, wsURL, nil)
+	wsConn, _, err := websocket.Dial(dialCtx, wsURL, nil)
 	if err != nil {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
 	defer wsConn.Close(websocket.StatusNormalClosure, "agent stopping")
 
-	serviceID := ""
-	if resp != nil && resp.Header != nil {
-		serviceID = resp.Header.Get(protocol.HeaderMaekID)
+	// Control-message handshake: register -> registered -> start.
+	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer hsCancel()
+
+	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
+		Type: protocol.MsgTypeRegister,
+		Service: &protocol.RegisterRequest{
+			Name:        a.cfg.Name,
+			ID:          a.cfg.PreferredID,
+			Description: a.cfg.Description,
+			Thumbnail:   a.cfg.Thumbnail,
+		},
+	}); err != nil {
+		return fmt.Errorf("register send failed: %w", err)
 	}
 
+	ack, err := protocol.ReadAgentMessage(hsCtx, wsConn)
+	if err != nil {
+		return fmt.Errorf("handshake read failed: %w", err)
+	}
+	if ack.Type == protocol.MsgTypeError {
+		return fmt.Errorf("server rejected registration: %s (%s)", ack.Message, ack.Code)
+	}
+	if ack.Type != protocol.MsgTypeRegistered || ack.ID == "" {
+		return fmt.Errorf("unexpected handshake response: type=%q id=%q", ack.Type, ack.ID)
+	}
+
+	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
+		Type: protocol.MsgTypeStart,
+	}); err != nil {
+		return fmt.Errorf("start send failed: %w", err)
+	}
+
+	serviceID := ack.ID
 	log.Printf("[maek-agent] Connected to server! Assigned Service ID: [%s], Name: '%s' (forwarding to %s)",
 		serviceID, a.cfg.Name, a.cfg.Target)
 
