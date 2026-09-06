@@ -84,10 +84,11 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
 	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
+	preferredID := strings.TrimSpace(r.URL.Query().Get("id"))
 
-	id, err := protocol.GenerateID()
+	id, err := s.registry.AllocateID(preferredID)
 	if err != nil {
-		http.Error(w, "Failed to generate service ID", http.StatusInternalServerError)
+		http.Error(w, "Failed to allocate service ID", http.StatusInternalServerError)
 		return
 	}
 

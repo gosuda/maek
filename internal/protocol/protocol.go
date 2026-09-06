@@ -19,8 +19,9 @@ const (
 	EndpointFloatJS  = "/_maek/float.js"
 	EndpointServices = "/_maek/api/services"
 
-	IDLength = 6
-	charset  = "abcdefghijklmnopqrstuvwxyz0123456789"
+	IDLength    = 6
+	MaxIDLength = 32
+	charset     = "abcdefghijklmnopqrstuvwxyz0123456789"
 )
 
 // ServiceInfo contains metadata about an active registered agent service.
@@ -47,4 +48,19 @@ func GenerateID() (string, error) {
 		sb.WriteByte(charset[n.Int64()])
 	}
 	return sb.String(), nil
+}
+
+// SanitizePreferredID strips invalid characters and ensures length <= MaxIDLength.
+func SanitizePreferredID(id string) string {
+	id = strings.TrimSpace(strings.ToLower(id))
+	var sb strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			sb.WriteRune(r)
+			if sb.Len() >= MaxIDLength {
+				break
+			}
+		}
+	}
+	return sb.String()
 }

@@ -21,6 +21,7 @@ import (
 type Config struct {
 	ServerURL   string // e.g. "ws://localhost:8080" or "http://localhost:8080"
 	Name        string // e.g. "my-app"
+	PreferredID string // optional custom preferred ID (up to 32 chars)
 	Description string // optional service description
 	Thumbnail   string // optional thumbnail/avatar URL
 	Target      string // local target, e.g. "http://localhost:3000" (kept private to agent)
@@ -124,6 +125,9 @@ func (a *Agent) buildWebSocketURL() string {
 
 	q := url.Values{}
 	q.Set("name", a.cfg.Name)
+	if a.cfg.PreferredID != "" {
+		q.Set("id", a.cfg.PreferredID)
+	}
 	if a.cfg.Description != "" {
 		q.Set("desc", a.cfg.Description)
 	}

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -36,6 +37,43 @@ func NewRegistry() *Registry {
 	return &Registry{
 		services: make(map[string]*ServiceSession),
 		byName:   make(map[string]string),
+	}
+}
+
+// AllocateID determines an available ID: either the sanitized preferred ID,
+// or preferred ID with a numeric suffix (-2, -3, ...), or a random 6-character ID if empty.
+func (r *Registry) AllocateID(preferred string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	clean := protocol.SanitizePreferredID(preferred)
+	if clean == "" {
+		for {
+			id, err := protocol.GenerateID()
+			if err != nil {
+				return "", err
+			}
+			if _, exists := r.services[id]; !exists {
+				return id, nil
+			}
+		}
+	}
+
+	if _, exists := r.services[clean]; !exists {
+		return clean, nil
+	}
+
+	// Conflict resolution: append -2, -3, etc. while respecting MaxIDLength
+	for counter := 2; ; counter++ {
+		suffix := fmt.Sprintf("-%d", counter)
+		base := clean
+		if len(base)+len(suffix) > protocol.MaxIDLength {
+			base = base[:protocol.MaxIDLength-len(suffix)]
+		}
+		candidate := base + suffix
+		if _, exists := r.services[candidate]; !exists {
+			return candidate, nil
+		}
 	}
 }
 
