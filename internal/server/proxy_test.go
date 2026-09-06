@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,41 @@ func TestBuildResponseModifier_NonHTML(t *testing.T) {
 	}
 	if string(bodyBytes) != jsonPayload {
 		t.Errorf("expected body to remain unchanged, got %q", string(bodyBytes))
+	}
+}
+
+func TestBuildResponseModifier_RootNoCache(t *testing.T) {
+	newResp := func(path string) *http.Response {
+		return &http.Response{
+			Header: http.Header{
+				"Content-Type":  []string{"text/html; charset=utf-8"},
+				"Cache-Control": []string{"public, max-age=3600"},
+			},
+			Body: io.NopCloser(strings.NewReader("<html><body>ok</body></html>")),
+			Request: &http.Request{
+				URL: &url.URL{Path: path},
+			},
+		}
+	}
+
+	// 1. Root path: upstream cache headers must be overridden.
+	rootResp := newResp("/")
+	if err := BuildResponseModifier("abc123", "app")(rootResp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cc := rootResp.Header.Get("Cache-Control"); cc != "no-cache, no-store, must-revalidate" {
+		t.Errorf("root: expected forced no-cache, got %q", cc)
+	}
+	if rootResp.Header.Get("Expires") != "0" {
+		t.Errorf("root: expected Expires: 0, got %q", rootResp.Header.Get("Expires"))
+	}
+
+	// 2. Non-root path: upstream cache headers must be preserved.
+	subResp := newResp("/assets/app.js")
+	if err := BuildResponseModifier("abc123", "app")(subResp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cc := subResp.Header.Get("Cache-Control"); cc != "public, max-age=3600" {
+		t.Errorf("subpath: expected upstream Cache-Control preserved, got %q", cc)
 	}
 }

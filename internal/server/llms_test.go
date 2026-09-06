@@ -88,3 +88,22 @@ func TestHandleAppJS(t *testing.T) {
 		t.Errorf("expected dashboard script content")
 	}
 }
+
+func TestCatalogUINoCacheHeaders(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	handler := srv.Handler()
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache, no-store, must-revalidate" {
+		t.Errorf("expected explicit no-cache Cache-Control, got %q", cc)
+	}
+	if rec.Header().Get("Expires") != "0" {
+		t.Errorf("expected Expires: 0, got %q", rec.Header().Get("Expires"))
+	}
+}

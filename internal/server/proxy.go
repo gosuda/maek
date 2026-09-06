@@ -44,6 +44,16 @@ func InjectFloatScript(htmlContent []byte, serviceID, serviceName string) []byte
 // BuildResponseModifier creates a ModifyResponse function tailored to a specific service.
 func BuildResponseModifier(serviceID, serviceName string) func(*http.Response) error {
 	return func(resp *http.Response) error {
+		// Always serve the app root ("/") with no-cache: the same URL is
+		// shared by the catalog and every proxied service (routing is
+		// cookie/header based), so a cached root would show the wrong
+		// app after switching services or exiting to the catalog.
+		if resp.Request != nil && resp.Request.URL.Path == "/" {
+			resp.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			resp.Header.Set("Pragma", "no-cache")
+			resp.Header.Set("Expires", "0")
+		}
+
 		// Sanitize Set-Cookie headers so client browser accepts upstream cookies on the proxy host
 		if cookies := resp.Header["Set-Cookie"]; len(cookies) > 0 {
 			newCookies := make([]string, len(cookies))
