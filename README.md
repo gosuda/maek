@@ -15,7 +15,7 @@
 [![Zero Config](https://img.shields.io/badge/DNS-Zero_Config-success?style=flat)](#zero-config-routing-no-wildcard-dns)
 [![Multiplexing](https://img.shields.io/badge/Tunnel-Yamux_over_WebSocket-purple?style=flat)](#architecture)
 
-</div>
+<br/>
 
 ```bash
 # 1. On your VPS ($3/mo, no domain needed)
@@ -26,37 +26,39 @@ curl -fsSL http://<VPS-IP>:8080/_maek/install.sh | sh
 maek agent -s ws://<VPS-IP>:8080 -t http://localhost:3000
 ```
 
+</div>
+
 ---
 
-## ⚡ Why maek?
+## Why maek?
 
-Most tunneling tools either lock you into costly monthly subscriptions, require annoying account registrations, or force you into complicated wildcard DNS and TLS certificate setups. 
+Most tunneling tools either lock you into monthly subscriptions, require account registrations, or force you through complicated wildcard DNS and TLS certificate setups. 
 
-**`maek` solves this cleanly.** You run one tiny binary on a cheap VPS, and it gives you unlimited, beautiful tunnels with zero external dependencies.
+**`maek` solves this cleanly.** You run one tiny binary on a VPS, and it gives you unlimited tunnels with zero external dependencies.
 
 | Feature | `maek` | `ngrok` (Free) | Cloudflare Tunnel | `frp` |
 | :--- | :---: | :---: | :---: | :---: |
-| **Account / Sign-up** | ❌ **None** | ⚠️ Required | ⚠️ Required | ❌ None |
-| **Custom Domain / Wildcard DNS** | ❌ **Not needed** (Works on IP) | ❌ Random subdomains | ⚠️ Custom domain required | ⚠️ Wildcard DNS required |
-| **Tunnel Limits & Pricing** | ♾️ **Unlimited (Free & OSS)** | ⚠️ 1 tunnel / rate limits | ♾️ Free | ♾️ Self-hosted |
-| **Private / Airgap Network** | ✅ **100% Self-contained** | ❌ Cloud only | ❌ Cloud only | ⚠️ Manual binary copy |
-| **Client Installation** | 🚀 **One-line from your VPS** | ⚠️ Download from cloud | ⚠️ Cloudflare package | ⚠️ Manual config |
-| **Web Catalog Dashboard** | ✅ **Twitter-style UI** | ⚠️ Web dashboard | ❌ Cloud console only | ⚠️ Basic admin UI |
-| **Auto Metadata Scraping** | ✅ **Title, icon, description** | ❌ None | ❌ None | ❌ None |
-| **Social / Messenger Previews** | ✅ **Slack, Discord, KakaoTalk** | ❌ None | ❌ None | ❌ None |
-| **WebSocket & Vite HMR** | ✅ **Full Yamux multiplexing** | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Account / Sign-up** | None | Required | Required | None |
+| **Custom Domain / Wildcard DNS** | Not needed (IP-based) | Random subdomains | Domain required | Wildcard DNS required |
+| **Tunnel Limits & Pricing** | Unlimited (Free & OSS) | 1 tunnel / rate limits | Free | Self-hosted |
+| **Private / Airgap Network** | Fully self-contained | Cloud only | Cloud only | Manual binary copy |
+| **Client Installation** | One-line script from VPS | Cloud download | Package manager | Manual configuration |
+| **Web Catalog Dashboard** | Twitter-style UI | Web dashboard | Cloud console only | Basic admin UI |
+| **Auto Metadata Scraping** | Title, icon, description | None | None | None |
+| **Social / Messenger Previews** | Slack, Discord, KakaoTalk | None | None | None |
+| **WebSocket & Vite HMR** | Full Yamux multiplexing | Yes | Yes | Yes |
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🎯 Zero-Config Routing (No Wildcard DNS)
+### Zero-Config Routing (No Wildcard DNS)
 No need to purchase domains or configure wildcard DNS (`*.domain.com`). 
 * **Direct URLs**: Share `http://<VPS-IP>:8080/_maek/my-app` or by ID `http://<VPS-IP>:8080/_maek/@k8x2p9`.
 * **Cookie Routing**: Visiting a direct URL or selecting an app in the catalog issues a lightweight session cookie (`maek_service=<id>`), routing all subsequent browser requests transparently.
 * **API / CLI Friendly**: Pass `X-Maek-Service: my-app` in `curl` or automated test scripts.
 
-### 🤖 Zero-Touch Auto-Scraping
+### Zero-Touch Auto-Scraping
 Just point `maek agent` to your local service:
 ```bash
 maek agent -s ws://vps:8080 -t http://localhost:3000
@@ -66,54 +68,54 @@ maek agent -s ws://vps:8080 -t http://localhost:3000
 - Description from `<meta name="description">` or `og:description`
 - Favicon and app icon from `<link rel="icon">` or Apple Touch Icons
 
-### 💬 Rich Social & Messenger Previews
-When you paste a `maek` link into **Slack, Discord, KakaoTalk, Twitter/X, or Telegram**, crawler bots are automatically served dynamic OpenGraph metadata with embedded thumbnails (`/_maek/thumb?id=xxx`). Your team sees a rich preview card instead of a blank or redirected link!
+### Rich Social & Messenger Previews
+When you paste a `maek` link into **Slack, Discord, KakaoTalk, Twitter/X, or Telegram**, crawler bots are automatically served dynamic OpenGraph metadata with embedded thumbnails (`/_maek/thumb?id=xxx`). Your team sees a rich preview card instead of a blank or redirected link.
 
-### 🪟 Isolated Floating Widget (`float.js`)
-When browsing your tunneled app, a sleek floating indicator is injected seamlessly before `</body>`:
+### Isolated Floating Widget (`float.js`)
+When browsing your tunneled app, a floating indicator is injected before `</body>`:
 * **Zero CSS conflicts**: Rendered inside a **Shadow DOM**.
 * **Magnetic drag-and-drop**: Snaps to the nearest screen corner and remembers its position in `localStorage`.
 * **Compact / Full mode**: Toggle between a minimal status dot and full service details.
 * **One-Click Disconnect**: Click **Exit ✕** anytime to clear your routing cookie and return to the catalog.
 
-### 📦 Self-Hosted Embedded Installers
+### Self-Hosted Embedded Installers
 The `maek server` binary **embeds multi-platform client archives** (`go:embed`).
 * Client machines download install scripts directly from your server:
   * **macOS / Linux**: `curl -fsSL http://<VPS-IP>:8080/_maek/install.sh | sh`
   * **Windows**: `irm http://<VPS-IP>:8080/_maek/install.ps1 | iex`
-* **Zero dependency on `api.github.com`**: Works flawlessly in private VPCs, company intranets, and restricted networks.
+* **Zero dependency on `api.github.com`**: Works in private VPCs, company intranets, and restricted networks.
 
-### 🎨 Twitter-Style Web Dashboard
+### Twitter-Style Web Dashboard
 Open `http://<VPS-IP>:8080/` in your browser to experience:
 * Clean Twitter/X typography with **Twitter Blue** (`#1d9bf0`) accents.
 * **2-Step Onboarding**: Auto-detects your OS (macOS, Linux, Windows, Go) with one-click copy buttons and dynamic agent command generator.
 * Live real-time service feed with status indicators and direct `curl` snippets.
 
-### ⚡ Yamux Multiplexing over WebSocket
+### Yamux Multiplexing over WebSocket
 All traffic—concurrent HTTP requests, high-volume static assets, and full-duplex WebSockets (such as **Next.js HMR**, **Vite**, live chat, or web terminals)—is multiplexed over a single persistent outbound WebSocket connection.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Clients ["🌐 Clients & Internet"]
-        Browser["🖥️ Browser"]
-        Curl["💻 CLI / curl"]
-        Bot["🤖 Messenger Bot<br/>(Slack, Discord, Kakao)"]
+    subgraph Clients ["Clients & Internet"]
+        Browser["Browser"]
+        Curl["CLI / curl"]
+        Bot["Messenger Bot<br/>(Slack, Discord, Kakao)"]
     end
 
-    subgraph VPS ["☁️ Public VPS — maek server"]
-        Router["🔀 Reverse Proxy Router"]
-        Catalog["🎨 Web Dashboard<br/>(Service Catalog)"]
-        OG["🖼️ OpenGraph Engine<br/>(Rich Link Previews)"]
-        YamuxServer["⚡ Yamux Multiplexer"]
+    subgraph VPS ["Public VPS (maek server)"]
+        Router["Reverse Proxy Router"]
+        Catalog["Web Dashboard<br/>(Service Catalog)"]
+        OG["OpenGraph Engine<br/>(Rich Link Previews)"]
+        YamuxServer["Yamux Multiplexer"]
     end
 
-    subgraph Local ["🔒 Private Network — Localhost"]
-        Agent["📡 maek agent"]
-        Target["🚀 Target Service<br/>(Next.js, Vite, FastAPI, ...)"]
+    subgraph Local ["Private Network (Local Machine)"]
+        Agent["maek agent"]
+        Target["Target Service<br/>(Next.js, Vite, FastAPI, ...)"]
     end
 
     %% Client Traffic Flows
@@ -134,7 +136,7 @@ flowchart TD
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Start Server on your VPS
 Run the single binary on any machine with a public IP:
@@ -179,7 +181,7 @@ maek agent -s ws://<VPS-IP>:8080 -n dev-app -i my-app -t http://localhost:3000
 
 ---
 
-## 📦 Installation Options
+## Installation Options
 
 ### Option A: One-Liner Script (Recommended)
 Download directly from your running `maek server`:
@@ -214,7 +216,7 @@ make docker-run
 
 ---
 
-## 💻 CLI Reference
+## CLI Reference
 
 ### `maek server`
 ```text
@@ -239,7 +241,7 @@ Flags:
 
 ---
 
-## 🛠️ Endpoints Reference
+## Endpoints Reference
 
 | Endpoint | Method | Description |
 | :--- | :---: | :--- |
@@ -255,6 +257,6 @@ Flags:
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
