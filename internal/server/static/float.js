@@ -4,10 +4,11 @@
 
   const currentScript = document.currentScript || document.querySelector('script[src*="/_maek/float.js"]');
   const serviceId = currentScript ? (currentScript.getAttribute('data-id') || '') : '';
-  const serviceName = currentScript ? (currentScript.getAttribute('data-name') || 'maek') : 'maek';
+  const serviceName = currentScript ? (currentScript.getAttribute('data-name') || 'app') : 'app';
 
-  const STORAGE_KEY = 'maek_float_pos';
-  const CORNER_ORDER = ['bottom-right', 'bottom-left', 'top-left', 'top-right'];
+  const STORAGE_POS_KEY = 'maek_float_pos';
+  const STORAGE_MODE_KEY = 'maek_float_mode';
+
   const POSITIONS = {
     'bottom-right': { bottom: '20px', right: '20px', top: 'auto', left: 'auto' },
     'bottom-left':  { bottom: '20px', left: '20px', top: 'auto', right: 'auto' },
@@ -17,13 +18,22 @@
 
   function getStoredPosition() {
     try {
-      const val = localStorage.getItem(STORAGE_KEY);
+      const val = localStorage.getItem(STORAGE_POS_KEY);
       if (val && POSITIONS[val]) return val;
     } catch (e) {}
     return 'bottom-right';
   }
 
+  function getStoredMode() {
+    try {
+      const val = localStorage.getItem(STORAGE_MODE_KEY);
+      if (val === 'compact' || val === 'full') return val;
+    } catch (e) {}
+    return 'full';
+  }
+
   let currentPos = getStoredPosition();
+  let currentMode = getStoredMode();
 
   const host = document.createElement('div');
   host.id = 'maek-float-root';
@@ -36,7 +46,7 @@
     if (!POSITIONS[pos]) pos = 'bottom-right';
     currentPos = pos;
     try {
-      localStorage.setItem(STORAGE_KEY, pos);
+      localStorage.setItem(STORAGE_POS_KEY, pos);
     } catch (e) {}
 
     if (!animate) {
@@ -67,7 +77,7 @@
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      padding: 6px 12px;
+      padding: 6px 11px;
       background: rgba(255, 255, 255, 0.94);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
@@ -93,50 +103,38 @@
       transform: scale(1.02);
       border-color: #1d9bf0;
     }
-    .drag-handle {
-      display: flex;
-      align-items: center;
-      color: #8b98a5;
-      cursor: grab;
-      margin-right: -2px;
-    }
-    .badge.dragging .drag-handle {
-      cursor: grabbing;
-    }
+
     .status-dot {
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background-color: #16a34a;
       box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
       flex-shrink: 0;
+      cursor: pointer;
+      transition: transform 0.15s ease;
     }
-    .brand {
-      color: #536471;
-      font-weight: 700;
-      font-size: 12px;
-      letter-spacing: 0.3px;
+    .status-dot:hover {
+      transform: scale(1.2);
     }
+
     .svc-name {
       color: #0f1419;
       font-weight: 700;
       font-size: 13px;
-      max-width: 140px;
+      max-width: 160px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      line-height: 1;
     }
-    .svc-id {
-      color: #536471;
-      font-size: 12px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    }
-    .pos-btn {
+
+    .toggle-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
       border: 1px solid #cfd9de;
       background: #f7f9f9;
@@ -144,33 +142,35 @@
       cursor: pointer;
       outline: none;
       padding: 0;
-      margin-left: 2px;
+      margin-left: 1px;
       transition: all 0.15s ease;
     }
-    .pos-btn:hover {
+    .toggle-btn:hover {
       background: #eff3f4;
       color: #0f1419;
       border-color: #8b98a5;
     }
-    .pos-btn svg {
-      width: 12px;
-      height: 12px;
+    .toggle-btn svg {
+      width: 11px;
+      height: 11px;
     }
+
     .exit-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-left: 3px;
-      padding: 3px 9px;
+      width: 20px;
+      height: 20px;
       background: #fee2e2;
       color: #dc2626;
       border: 1px solid #fecaca;
-      border-radius: 9999px;
+      border-radius: 50%;
       font-size: 11px;
       font-weight: 700;
       text-decoration: none;
       cursor: pointer;
-      white-space: nowrap;
+      line-height: 1;
+      margin-left: 1px;
       transition: all 0.15s ease;
     }
     .exit-btn:hover {
@@ -178,92 +178,104 @@
       color: #b91c1c;
       border-color: #f87171;
     }
+
+    /* Compact mode styles: only status-dot and exit-btn */
+    .badge.mode-compact {
+      padding: 5px 8px;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .badge.mode-compact .svc-name,
+    .badge.mode-compact .toggle-btn {
+      display: none !important;
+    }
   `;
 
   const badge = document.createElement('div');
-  badge.className = 'badge';
-
-  // Drag handle icon
-  const dragHandle = document.createElement('span');
-  dragHandle.className = 'drag-handle';
-  dragHandle.title = 'Drag to move corner';
-  dragHandle.innerHTML = `
-    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-      <circle cx="2" cy="2" r="1.2"/>
-      <circle cx="8" cy="2" r="1.2"/>
-      <circle cx="2" cy="7" r="1.2"/>
-      <circle cx="8" cy="7" r="1.2"/>
-      <circle cx="2" cy="12" r="1.2"/>
-      <circle cx="8" cy="12" r="1.2"/>
-    </svg>
-  `;
+  badge.className = 'badge mode-' + currentMode;
 
   const dot = document.createElement('span');
   dot.className = 'status-dot';
-
-  const brand = document.createElement('span');
-  brand.className = 'brand';
-  brand.textContent = 'maek:';
+  dot.title = currentMode === 'compact' ? `${serviceName} (클릭하여 펼치기)` : `${serviceName} (활성 상태)`;
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'svc-name';
   nameSpan.textContent = serviceName;
-  nameSpan.title = serviceName + (serviceId ? ' (' + serviceId + ')' : '');
+  nameSpan.title = serviceName + (serviceId ? ` (@${serviceId})` : '');
 
-  const idSpan = document.createElement('span');
-  idSpan.className = 'svc-id';
-  idSpan.textContent = serviceId ? `@${serviceId}` : '';
-
-  // Position switcher button (cycles corners on click)
-  const posBtn = document.createElement('button');
-  posBtn.type = 'button';
-  posBtn.className = 'pos-btn';
-  posBtn.title = 'Cycle position (Bottom-Right -> Bottom-Left -> Top-Left -> Top-Right)';
-  posBtn.innerHTML = `
+  // Toggle button (diagonal arrow button to collapse to compact mode)
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'toggle-btn';
+  toggleBtn.title = '컴팩트 모드로 전환';
+  toggleBtn.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>
     </svg>
   `;
-
-  posBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    e.preventDefault();
-    const idx = CORNER_ORDER.indexOf(currentPos);
-    const nextPos = CORNER_ORDER[(idx + 1) % CORNER_ORDER.length];
-    applyPosition(nextPos, true);
-  });
 
   const exitLink = document.createElement('a');
   exitLink.className = 'exit-btn';
   exitLink.href = '/_maek';
-  exitLink.textContent = 'Exit ✕';
-  exitLink.title = 'Disconnect and return to maek catalog';
+  exitLink.textContent = '✕';
+  exitLink.title = 'Exit and return to maek catalog';
 
-  badge.appendChild(dragHandle);
-  badge.appendChild(dot);
-  badge.appendChild(brand);
-  badge.appendChild(nameSpan);
-  if (serviceId) {
-    badge.appendChild(idSpan);
+  function updateModeUI(mode) {
+    currentMode = mode;
+    try {
+      localStorage.setItem(STORAGE_MODE_KEY, mode);
+    } catch (e) {}
+
+    if (mode === 'compact') {
+      badge.classList.remove('mode-full');
+      badge.classList.add('mode-compact');
+      dot.title = `${serviceName} (클릭하여 펼치기)`;
+      badge.title = `${serviceName} - 클릭하여 펼치기 (드래그하여 위치 이동)`;
+    } else {
+      badge.classList.remove('mode-compact');
+      badge.classList.add('mode-full');
+      dot.title = `${serviceName} (활성 상태)`;
+      badge.title = '드래그하여 모서리로 이동';
+    }
   }
-  badge.appendChild(posBtn);
+
+  updateModeUI(currentMode);
+
+  toggleBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    updateModeUI('compact');
+  });
+
+  dot.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (currentMode === 'compact') {
+      updateModeUI('full');
+    }
+  });
+
+  badge.appendChild(dot);
+  badge.appendChild(nameSpan);
+  badge.appendChild(toggleBtn);
   badge.appendChild(exitLink);
 
   shadow.appendChild(style);
   shadow.appendChild(badge);
 
-  // Drag-and-drop to nearest corner
+  // Drag-and-drop snapping to 4 corners
   let isDragging = false;
+  let didDrag = false;
   let startX = 0;
   let startY = 0;
   let initialLeft = 0;
   let initialTop = 0;
 
   function onPointerDown(clientX, clientY, target) {
-    if (target.closest('.exit-btn') || target.closest('.pos-btn')) {
+    if (target.closest('.exit-btn') || target.closest('.toggle-btn')) {
       return;
     }
     isDragging = true;
+    didDrag = false;
     startX = clientX;
     startY = clientY;
 
@@ -276,16 +288,20 @@
     host.style.left = initialLeft + 'px';
     host.style.bottom = 'auto';
     host.style.right = 'auto';
-
-    badge.classList.add('dragging');
   }
 
   function onPointerMove(clientX, clientY) {
     if (!isDragging) return;
     const dx = clientX - startX;
     const dy = clientY - startY;
-    host.style.left = (initialLeft + dx) + 'px';
-    host.style.top = (initialTop + dy) + 'px';
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      if (!didDrag) {
+        didDrag = true;
+        badge.classList.add('dragging');
+      }
+      host.style.left = (initialLeft + dx) + 'px';
+      host.style.top = (initialTop + dy) + 'px';
+    }
   }
 
   function onPointerUp() {
@@ -293,20 +309,27 @@
     isDragging = false;
     badge.classList.remove('dragging');
 
-    const rect = host.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const midX = window.innerWidth / 2;
-    const midY = window.innerHeight / 2;
+    if (didDrag) {
+      const rect = host.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const midX = window.innerWidth / 2;
+      const midY = window.innerHeight / 2;
 
-    let targetCorner = 'bottom-right';
-    if (centerY < midY) {
-      targetCorner = (centerX < midX) ? 'top-left' : 'top-right';
+      let targetCorner = 'bottom-right';
+      if (centerY < midY) {
+        targetCorner = (centerX < midX) ? 'top-left' : 'top-right';
+      } else {
+        targetCorner = (centerX < midX) ? 'bottom-left' : 'bottom-right';
+      }
+
+      applyPosition(targetCorner, true);
     } else {
-      targetCorner = (centerX < midX) ? 'bottom-left' : 'bottom-right';
+      // User clicked without dragging
+      if (currentMode === 'compact') {
+        updateModeUI('full');
+      }
     }
-
-    applyPosition(targetCorner, true);
   }
 
   badge.addEventListener('mousedown', function(e) {
