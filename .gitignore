@@ -1,6 +1,7 @@
 # Binaries
-maek
-maek.exe
+/maek
+/maek.exe
+/dist/
 *.exe
 *.test
 *.out
