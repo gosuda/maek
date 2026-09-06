@@ -41,6 +41,7 @@
   host.style.zIndex = '2147483647';
   host.style.pointerEvents = 'auto';
   host.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  host.style.lineHeight = 'normal';
 
   function applyPosition(pos, animate) {
     if (!POSITIONS[pos]) pos = 'bottom-right';
@@ -49,17 +50,16 @@
       localStorage.setItem(STORAGE_POS_KEY, pos);
     } catch (e) {}
 
-    if (!animate) {
-      host.style.transition = 'none';
-    } else {
-      host.style.transition = 'top 0.22s cubic-bezier(0.16, 1, 0.3, 1), bottom 0.22s cubic-bezier(0.16, 1, 0.3, 1), left 0.22s cubic-bezier(0.16, 1, 0.3, 1), right 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
-    }
+    host.style.transition = animate
+      ? 'top 0.22s cubic-bezier(0.16, 1, 0.3, 1), bottom 0.22s cubic-bezier(0.16, 1, 0.3, 1), left 0.22s cubic-bezier(0.16, 1, 0.3, 1), right 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+      : 'none';
 
     const p = POSITIONS[pos];
     host.style.top = p.top;
     host.style.bottom = p.bottom;
     host.style.left = p.left;
     host.style.right = p.right;
+    host.style.transform = 'none';
   }
 
   applyPosition(currentPos, false);
@@ -90,7 +90,8 @@
       user-select: none;
       -webkit-user-select: none;
       cursor: grab;
-      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+      overflow: hidden;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, padding 0.2s cubic-bezier(0.16, 1, 0.3, 1), gap 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .badge:hover {
       background: #ffffff;
@@ -100,7 +101,6 @@
     .badge.dragging {
       cursor: grabbing;
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-      transform: scale(1.02);
       border-color: #1d9bf0;
     }
 
@@ -122,11 +122,13 @@
       color: #0f1419;
       font-weight: 700;
       font-size: 13px;
-      max-width: 160px;
+      max-width: 180px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       line-height: 1;
+      opacity: 1;
+      transition: max-width 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease;
     }
 
     .toggle-btn {
@@ -135,6 +137,7 @@
       justify-content: center;
       width: 20px;
       height: 20px;
+      max-width: 20px;
       border-radius: 50%;
       border: 1px solid #cfd9de;
       background: #f7f9f9;
@@ -143,7 +146,10 @@
       outline: none;
       padding: 0;
       margin-left: 1px;
-      transition: all 0.15s ease;
+      overflow: hidden;
+      flex-shrink: 0;
+      opacity: 1;
+      transition: max-width 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease, margin 0.2s ease, background 0.15s ease, border-color 0.15s ease;
     }
     .toggle-btn:hover {
       background: #eff3f4;
@@ -153,6 +159,7 @@
     .toggle-btn svg {
       width: 11px;
       height: 11px;
+      flex-shrink: 0;
     }
 
     .exit-btn {
@@ -171,6 +178,7 @@
       cursor: pointer;
       line-height: 1;
       margin-left: 1px;
+      flex-shrink: 0;
       transition: all 0.15s ease;
     }
     .exit-btn:hover {
@@ -179,15 +187,23 @@
       border-color: #f87171;
     }
 
-    /* Compact mode styles: only status-dot and exit-btn */
+    /* Compact mode styles */
     .badge.mode-compact {
       padding: 5px 8px;
       gap: 6px;
       cursor: pointer;
     }
-    .badge.mode-compact .svc-name,
+    .badge.mode-compact .svc-name {
+      max-width: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
     .badge.mode-compact .toggle-btn {
-      display: none !important;
+      max-width: 0;
+      opacity: 0;
+      margin: 0;
+      border: none;
+      pointer-events: none;
     }
   `;
 
@@ -196,14 +212,12 @@
 
   const dot = document.createElement('span');
   dot.className = 'status-dot';
-  dot.title = currentMode === 'compact' ? `${serviceName} (클릭하여 펼치기)` : `${serviceName} (활성 상태)`;
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'svc-name';
   nameSpan.textContent = serviceName;
   nameSpan.title = serviceName + (serviceId ? ` (@${serviceId})` : '');
 
-  // Toggle button (diagonal arrow button to collapse to compact mode)
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
   toggleBtn.className = 'toggle-btn';
@@ -237,6 +251,9 @@
       dot.title = `${serviceName} (활성 상태)`;
       badge.title = '드래그하여 모서리로 이동';
     }
+
+    // Re-verify that host is cleanly anchored to its corner
+    applyPosition(currentPos, false);
   }
 
   updateModeUI(currentMode);
@@ -262,54 +279,51 @@
   shadow.appendChild(style);
   shadow.appendChild(badge);
 
-  // Drag-and-drop snapping to 4 corners
+  // Drag-and-drop snapping using transform (never breaks corner layout anchors)
+  let isPointerDown = false;
   let isDragging = false;
   let didDrag = false;
   let startX = 0;
   let startY = 0;
-  let initialLeft = 0;
-  let initialTop = 0;
 
   function onPointerDown(clientX, clientY, target) {
     if (target.closest('.exit-btn') || target.closest('.toggle-btn')) {
       return;
     }
-    isDragging = true;
+    isPointerDown = true;
     didDrag = false;
+    isDragging = false;
     startX = clientX;
     startY = clientY;
-
-    const rect = host.getBoundingClientRect();
-    initialLeft = rect.left;
-    initialTop = rect.top;
-
-    host.style.transition = 'none';
-    host.style.top = initialTop + 'px';
-    host.style.left = initialLeft + 'px';
-    host.style.bottom = 'auto';
-    host.style.right = 'auto';
   }
 
   function onPointerMove(clientX, clientY) {
-    if (!isDragging) return;
+    if (!isPointerDown) return;
     const dx = clientX - startX;
     const dy = clientY - startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      if (!didDrag) {
+
+    if (!isDragging) {
+      if (Math.hypot(dx, dy) > 4) {
+        isDragging = true;
         didDrag = true;
         badge.classList.add('dragging');
+        host.style.transition = 'none';
       }
-      host.style.left = (initialLeft + dx) + 'px';
-      host.style.top = (initialTop + dy) + 'px';
+    }
+
+    if (isDragging) {
+      host.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
     }
   }
 
   function onPointerUp() {
-    if (!isDragging) return;
-    isDragging = false;
-    badge.classList.remove('dragging');
+    if (!isPointerDown) return;
+    isPointerDown = false;
 
-    if (didDrag) {
+    if (isDragging) {
+      isDragging = false;
+      badge.classList.remove('dragging');
+
       const rect = host.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
@@ -325,7 +339,7 @@
 
       applyPosition(targetCorner, true);
     } else {
-      // User clicked without dragging
+      // Clean click on badge in compact mode expands to full
       if (currentMode === 'compact') {
         updateModeUI('full');
       }
@@ -356,7 +370,7 @@
   }, { passive: true });
 
   badge.addEventListener('touchmove', function(e) {
-    if (isDragging && e.touches.length === 1) {
+    if (e.touches.length === 1) {
       onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, { passive: true });
