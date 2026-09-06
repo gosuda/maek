@@ -34,19 +34,6 @@ case "$ARCH_RAW" in
     ;;
 esac
 
-# Detect Version
-VER="${VERSION:-}"
-if [ -z "$VER" ]; then
-  case "$TEMPLATE_VERSION" in
-    v*|[0-9]*) VER="${TEMPLATE_VERSION#v}" ;;
-  esac
-fi
-if [ -z "$VER" ]; then
-  VER="$(curl -sSL "https://api.github.com/repos/gosuda/maek/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")"
-  [ -z "$VER" ] && VER="0.1.0"
-fi
-VER="${VER#v}"
-
 TARBALL="maek_${OS}_${ARCH}.tar.gz"
 TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'maek-install')"
 cleanup() { rm -rf "$TMPDIR"; }
@@ -55,7 +42,7 @@ trap cleanup EXIT INT TERM
 echo "==> Downloading maek for ${OS}/${ARCH}..."
 
 DOWNLOAD_SUCCESS=0
-# 1. Try downloading from maek server if available
+# 1. Download directly from maek server (embedded binaries)
 if [ -n "$BASE_URL" ]; then
   SERVER_DOWNLOAD_URL="${BASE_URL}/_maek/download?os=${OS}&arch=${ARCH}"
   if curl -fsSL "$SERVER_DOWNLOAD_URL" -o "$TMPDIR/$TARBALL" 2>/dev/null; then
@@ -63,8 +50,14 @@ if [ -n "$BASE_URL" ]; then
   fi
 fi
 
-# 2. Fallback to GitHub Releases if server download failed or not configured
+# 2. Fallback to GitHub Releases if no server URL provided
 if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
+  VER="${VERSION:-${TEMPLATE_VERSION}}"
+  case "$VER" in
+    __VERSION__|dev|"") VER="0.1.0" ;;
+    *) VER="${VER#v}" ;;
+  esac
+
   GITHUB_RELEASE_TARBALL="maek_${VER}_${OS}_${ARCH}.tar.gz"
   GITHUB_URL="https://github.com/gosuda/maek/releases/download/v${VER}/${GITHUB_RELEASE_TARBALL}"
   echo "==> Fetching from GitHub Releases (v${VER})..."
