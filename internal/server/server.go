@@ -196,7 +196,7 @@ func (s *Server) serveFrameAgent(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Acknowledge with the assigned ID.
 	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
-		Type: protocol.MsgTypeRegistered, ID: id,
+		Type: protocol.MsgTypeRegistered, ID: id, Name: name,
 	}); err != nil {
 		return
 	}

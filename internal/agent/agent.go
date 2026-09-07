@@ -201,8 +201,9 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 	}
 
 	serviceID := ack.ID
+	serviceName := ack.Name
 	log.Printf("[maek-agent] Connected to server! Assigned Service ID: [%s], Name: '%s' (forwarding to %s)",
-		serviceID, a.cfg.Name, a.cfg.Target)
+		serviceID, serviceName, a.cfg.Target)
 
 	netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
 

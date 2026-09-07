@@ -38,6 +38,7 @@ type AgentMessage struct {
 	Type    string           `json:"type"`
 	Service *RegisterRequest `json:"service,omitempty"` // for "register"
 	ID      string           `json:"id,omitempty"`      // for "registered"
+	Name    string           `json:"name,omitempty"`    // for "registered"
 	Code    string           `json:"code,omitempty"`    // for "error"
 	Message string           `json:"message,omitempty"` // for "error"
 }
