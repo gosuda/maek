@@ -8,11 +8,11 @@ import (
 	"github.com/gosuda/maek/internal/protocol"
 )
 
-func TestRegistry_AllocateID(t *testing.T) {
+func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 	r := NewRegistry()
 
-	// 1. Empty preferred -> 6-char random
-	id1, err := r.AllocateID("")
+	// 1. Empty preferred ID -> 6-char random
+	id1, _, err := r.ResolveHandle("", "app")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestRegistry_AllocateID(t *testing.T) {
 	}
 
 	// 2. Unoccupied preferred ID
-	id2, err := r.AllocateID("dev-code")
+	id2, _, err := r.ResolveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,11 +29,10 @@ func TestRegistry_AllocateID(t *testing.T) {
 		t.Fatalf("expected dev-code, got %s", id2)
 	}
 
-	// Mock registration of id2 so it becomes occupied
 	r.services["dev-code"] = &ServiceSession{}
 
 	// 3. Occupied preferred ID -> should get dev-code-2
-	id3, err := r.AllocateID("dev-code")
+	id3, _, err := r.ResolveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,11 +40,10 @@ func TestRegistry_AllocateID(t *testing.T) {
 		t.Fatalf("expected dev-code-2, got %s", id3)
 	}
 
-	// Mock registration of dev-code-2
 	r.services["dev-code-2"] = &ServiceSession{}
 
 	// 4. Occupied again -> should get dev-code-3
-	id4, err := r.AllocateID("dev-code")
+	id4, _, err := r.ResolveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -55,12 +53,87 @@ func TestRegistry_AllocateID(t *testing.T) {
 
 	// 5. Length constraint (max 32 characters)
 	longID := strings.Repeat("a", 35)
-	id5, err := r.AllocateID(longID)
+	id5, _, err := r.ResolveHandle(longID, "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(id5) > protocol.MaxIDLength {
 		t.Fatalf("id length %d exceeds max %d", len(id5), protocol.MaxIDLength)
+	}
+}
+
+func TestRegistry_ResolveHandle_NameSuffix(t *testing.T) {
+	r := NewRegistry()
+
+	// First allocation: name "foo" should be granted as-is.
+	id1, name1, err := r.ResolveHandle("owner-a", "foo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id1 != "owner-a" || name1 != "foo" {
+		t.Fatalf("expected owner-a/foo, got %s/%s", id1, name1)
+	}
+
+	// Simulate the service being registered so byName is populated.
+	r.byName["foo"] = "owner-a"
+	r.services["owner-a"] = &ServiceSession{}
+
+	// Second allocation: same name "foo" with different ID -> name should be auto-suffixed.
+	id2, name2, err := r.ResolveHandle("owner-b", "foo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id2 != "owner-b" {
+		t.Fatalf("expected id owner-b, got %s", id2)
+	}
+	if name2 != "foo-2" {
+		t.Fatalf("expected name foo-2, got %s", name2)
+	}
+
+	// Third allocation: "foo" and "foo-2" both taken -> should get "foo-3".
+	r.byName["foo-2"] = "owner-b"
+	r.services["owner-b"] = &ServiceSession{}
+
+	_, name3, err := r.ResolveHandle("owner-c", "foo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name3 != "foo-3" {
+		t.Fatalf("expected name foo-3, got %s", name3)
+	}
+}
+
+// TestRegistry_HandleTaken_CrossNamespace verifies that a new agent cannot claim an ID
+// that matches an existing agent's Name, which would shadow it in Get().
+func TestRegistry_HandleTaken_CrossNamespace(t *testing.T) {
+	r := NewRegistry()
+
+	// Agent A: ID="zzz", Name="yyy"
+	idA, nameA, err := r.ResolveHandle("zzz", "yyy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := r.Register(protocol.ServiceInfo{ID: idA, Name: nameA}, nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Agent B requests ID="yyy" — collides with A's Name in Get() lookup.
+	// handleTaken must detect the byName collision and suffix the ID.
+	idB, _, err := r.ResolveHandle("yyy", "abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if idB == "yyy" {
+		t.Fatal("agent B was assigned ID \"yyy\" which shadows agent A's Name — cross-namespace hijack not prevented")
+	}
+
+	// "yyy" must still resolve to agent A.
+	got, ok := r.Get("yyy")
+	if !ok {
+		t.Fatal("Get(\"yyy\") returned nothing — agent A was orphaned")
+	}
+	if got.Info.ID != idA {
+		t.Fatalf("Get(\"yyy\") returned %q, want %q — routing was hijacked", got.Info.ID, idA)
 	}
 }
 

@@ -116,7 +116,7 @@ func (s *Server) serveLegacyAgent(w http.ResponseWriter, r *http.Request, name, 
 		preferredID = name
 	}
 
-	id, err := s.registry.AllocateID(preferredID)
+	id, name, err := s.registry.ResolveHandle(preferredID, name)
 	if err != nil {
 		http.Error(w, "Failed to allocate service ID", http.StatusInternalServerError)
 		return
@@ -188,7 +188,7 @@ func (s *Server) serveFrameAgent(w http.ResponseWriter, r *http.Request) {
 		preferredID = name
 	}
 
-	id, err := s.registry.AllocateID(preferredID)
+	id, name, err := s.registry.ResolveHandle(preferredID, name)
 	if err != nil {
 		fail("id-allocation", "failed to allocate service ID")
 		return

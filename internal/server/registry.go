@@ -41,12 +41,29 @@ func NewRegistry() *Registry {
 	}
 }
 
-// AllocateID determines an available ID: either the sanitized preferred ID,
-// or preferred ID with a numeric suffix (-2, -3, ...), or a random 6-character ID if empty.
-func (r *Registry) AllocateID(preferred string) (string, error) {
+// ResolveHandle returns a collision-free ID and Name for a new service,
+// auto-suffixing either if the preferred value is already taken.
+func (r *Registry) ResolveHandle(preferredID, preferredName string) (id, name string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	id, err = r.resolveID(preferredID)
+	if err != nil {
+		return "", "", err
+	}
+	name = r.resolveName(preferredName)
+	return id, name, nil
+}
+
+// handleTaken reports whether a candidate handle (ID or Name) is already in use
+// in either namespace, since Get() treats both maps as one unified lookup space.
+func (r *Registry) handleTaken(h string) bool {
+	_, inServices := r.services[h]
+	_, inByName := r.byName[h]
+	return inServices || inByName
+}
+
+func (r *Registry) resolveID(preferred string) (string, error) {
 	clean := protocol.SanitizePreferredID(preferred)
 	if protocol.IsReservedName(clean) {
 		clean = "app-" + clean
@@ -57,13 +74,13 @@ func (r *Registry) AllocateID(preferred string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			if _, exists := r.services[id]; !exists && !protocol.IsReservedName(id) {
+			if !r.handleTaken(id) && !protocol.IsReservedName(id) {
 				return id, nil
 			}
 		}
 	}
 
-	if _, exists := r.services[clean]; !exists {
+	if !r.handleTaken(clean) {
 		return clean, nil
 	}
 
@@ -75,8 +92,23 @@ func (r *Registry) AllocateID(preferred string) (string, error) {
 			base = base[:protocol.MaxIDLength-len(suffix)]
 		}
 		candidate := base + suffix
-		if _, exists := r.services[candidate]; !exists {
+		if !r.handleTaken(candidate) {
 			return candidate, nil
+		}
+	}
+}
+
+func (r *Registry) resolveName(preferred string) string {
+	if preferred == "" {
+		preferred = "app"
+	}
+	if !r.handleTaken(preferred) {
+		return preferred
+	}
+	for counter := 2; ; counter++ {
+		candidate := fmt.Sprintf("%s-%d", preferred, counter)
+		if !r.handleTaken(candidate) {
+			return candidate
 		}
 	}
 }
