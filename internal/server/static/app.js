@@ -65,6 +65,8 @@
         cmdBox.textContent = `go install github.com/gosuda/maek/cmd/maek@latest`;
         linksBox.innerHTML = `Requires Go 1.22+ · <a href="https://github.com/gosuda/maek/releases" target="_blank" rel="noopener">GitHub Releases &rarr;</a>`;
       }
+
+      updateCommand();
     }
 
     function copyInstallCmd() {
@@ -77,6 +79,17 @@
     }
 
     // Interactive Command Builder
+
+    // POSIX sh/bash (macOS, Linux): escape ' as '\''
+    function shellQuotePosix(s) {
+      return "'" + s.replace(/'/g, "'\\''") + "'";
+    }
+
+    // PowerShell: escape ' as '' (doubling), wrap in single quotes
+    function shellQuotePs(s) {
+      return "'" + s.replace(/'/g, "''") + "'";
+    }
+
     function updateCommand() {
       const host = window.location.host || '127.0.0.1:8080';
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -85,21 +98,26 @@
       const id = document.getElementById('param-id').value.trim();
       const desc = document.getElementById('param-desc').value.trim();
 
+      const effectiveOS = currentOS === 'go' ? detectOS() : currentOS;
+      const isPowerShell = effectiveOS === 'windows';
+      const q = isPowerShell ? shellQuotePs : shellQuotePosix;
+      const cont = isPowerShell ? '`' : '\\';
+
       let lines = [
-        'maek agent \\',
-        `  --server ${wsProto}//${host} \\`
+        `maek agent ${cont}`,
+        `  --server ${wsProto}//${host} ${cont}`
       ];
 
       if (name) {
-        lines.push(`  --name ${name} \\`);
+        lines.push(`  --name ${q(name)} ${cont}`);
       }
       if (id) {
-        lines.push(`  --id ${id} \\`);
+        lines.push(`  --id ${q(id)} ${cont}`);
       }
       if (desc) {
-        lines.push(`  --desc "${desc}" \\`);
+        lines.push(`  --desc ${q(desc)} ${cont}`);
       }
-      lines.push(`  --target ${target}`);
+      lines.push(`  --target ${q(target)}`);
 
       document.getElementById('cmd-output').textContent = lines.join('\n');
     }
