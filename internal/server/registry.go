@@ -102,6 +102,9 @@ func (r *Registry) resolveName(preferred string) string {
 	if preferred == "" {
 		preferred = "app"
 	}
+	if protocol.IsReservedName(preferred) {
+		preferred = "app-" + preferred
+	}
 	if !r.handleTaken(preferred) {
 		return preferred
 	}
