@@ -32,18 +32,20 @@ type Registry struct {
 	mu       sync.RWMutex
 	services map[string]*ServiceSession // keyed by ID
 	byName   map[string]string          // maps Name -> ID
+	pending  map[string]string          // reserved ID -> Name (handshake in progress)
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		services: make(map[string]*ServiceSession),
 		byName:   make(map[string]string),
+		pending:  make(map[string]string),
 	}
 }
 
-// ResolveHandle returns a collision-free ID and Name for a new service,
-// auto-suffixing either if the preferred value is already taken.
-func (r *Registry) ResolveHandle(preferredID, preferredName string) (id, name string, err error) {
+// ReserveHandle atomically resolves and reserves a collision-free ID and Name.
+// The caller MUST call Register on success or Release on any failure path.
+func (r *Registry) ReserveHandle(preferredID, preferredName string) (id, name string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -52,15 +54,36 @@ func (r *Registry) ResolveHandle(preferredID, preferredName string) (id, name st
 		return "", "", err
 	}
 	name = r.resolveName(preferredName)
+	r.pending[id] = name
 	return id, name, nil
 }
 
-// handleTaken reports whether a candidate handle (ID or Name) is already in use
-// in either namespace, since Get() treats both maps as one unified lookup space.
+// Release removes a pending reservation. Safe to call after Register has
+// already claimed it — in that case it is a no operation.
+func (r *Registry) Release(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.pending, id)
+}
+
+// handleTaken reports whether a candidate handle is already in use across
+// all namespaces including in-progress reservations.
 func (r *Registry) handleTaken(h string) bool {
-	_, inServices := r.services[h]
-	_, inByName := r.byName[h]
-	return inServices || inByName
+	if _, ok := r.services[h]; ok {
+		return true
+	}
+	if _, ok := r.byName[h]; ok {
+		return true
+	}
+	if _, ok := r.pending[h]; ok { // h is a pending ID
+		return true
+	}
+	for _, name := range r.pending { // h is a pending Name
+		if name == h {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) resolveID(preferred string) (string, error) {
@@ -116,10 +139,16 @@ func (r *Registry) resolveName(preferred string) string {
 	}
 }
 
-// Register adds an active agent session to the registry.
+// Register claims a pending reservation and adds the session to the registry.
 func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, modifyResponse func(*http.Response) error) (*ServiceSession, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Claim the reservation made by ReserveHandle.
+	if _, ok := r.pending[info.ID]; !ok {
+		return nil, fmt.Errorf("no pending reservation for ID %q", info.ID)
+	}
+	delete(r.pending, info.ID)
 
 	// Create custom transport that dials streams through this yamux session
 	transport := &http.Transport{

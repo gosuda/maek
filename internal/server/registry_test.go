@@ -2,6 +2,7 @@ package server
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 	r := NewRegistry()
 
 	// 1. Empty preferred ID -> 6-char random
-	id1, _, err := r.ResolveHandle("", "app")
+	id1, _, err := r.ReserveHandle("", "app")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -21,7 +22,7 @@ func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 	}
 
 	// 2. Unoccupied preferred ID
-	id2, _, err := r.ResolveHandle("dev-code", "svc")
+	id2, _, err := r.ReserveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 	r.services["dev-code"] = &ServiceSession{}
 
 	// 3. Occupied preferred ID -> should get dev-code-2
-	id3, _, err := r.ResolveHandle("dev-code", "svc")
+	id3, _, err := r.ReserveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 	r.services["dev-code-2"] = &ServiceSession{}
 
 	// 4. Occupied again -> should get dev-code-3
-	id4, _, err := r.ResolveHandle("dev-code", "svc")
+	id4, _, err := r.ReserveHandle("dev-code", "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestRegistry_ResolveHandle_IDSuffix(t *testing.T) {
 
 	// 5. Length constraint (max 32 characters)
 	longID := strings.Repeat("a", 35)
-	id5, _, err := r.ResolveHandle(longID, "svc")
+	id5, _, err := r.ReserveHandle(longID, "svc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestRegistry_ResolveHandle_NameSuffix(t *testing.T) {
 	r := NewRegistry()
 
 	// First allocation: name "foo" should be granted as-is.
-	id1, name1, err := r.ResolveHandle("owner-a", "foo")
+	id1, name1, err := r.ReserveHandle("owner-a", "foo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestRegistry_ResolveHandle_NameSuffix(t *testing.T) {
 	r.services["owner-a"] = &ServiceSession{}
 
 	// Second allocation: same name "foo" with different ID -> name should be auto-suffixed.
-	id2, name2, err := r.ResolveHandle("owner-b", "foo")
+	id2, name2, err := r.ReserveHandle("owner-b", "foo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestRegistry_ResolveHandle_NameSuffix(t *testing.T) {
 	r.byName["foo-2"] = "owner-b"
 	r.services["owner-b"] = &ServiceSession{}
 
-	_, name3, err := r.ResolveHandle("owner-c", "foo")
+	_, name3, err := r.ReserveHandle("owner-c", "foo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestRegistry_HandleTaken_CrossNamespace(t *testing.T) {
 	r := NewRegistry()
 
 	// Agent A: ID="zzz", Name="yyy"
-	idA, nameA, err := r.ResolveHandle("zzz", "yyy")
+	idA, nameA, err := r.ReserveHandle("zzz", "yyy")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestRegistry_HandleTaken_CrossNamespace(t *testing.T) {
 
 	// Agent B requests ID="yyy" — collides with A's Name in Get() lookup.
 	// handleTaken must detect the byName collision and suffix the ID.
-	idB, _, err := r.ResolveHandle("yyy", "abc")
+	idB, _, err := r.ReserveHandle("yyy", "abc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,6 +138,47 @@ func TestRegistry_HandleTaken_CrossNamespace(t *testing.T) {
 	}
 }
 
+// TestRegistry_ReserveHandle_Concurrent verifies that concurrent ReserveHandle
+// calls with the same preferred Name never produce duplicate IDs or Names.
+func TestRegistry_ReserveHandle_Concurrent(t *testing.T) {
+	const n = 20
+	r := NewRegistry()
+
+	type result struct{ id, name string }
+	results := make([]result, n)
+	var wg sync.WaitGroup
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id, name, err := r.ReserveHandle("", "myapp")
+			if err != nil {
+				t.Errorf("goroutine %d: unexpected error: %v", i, err)
+				return
+			}
+			results[i] = result{id, name}
+		}(i)
+	}
+	wg.Wait()
+
+	seenIDs := make(map[string]int)
+	seenNames := make(map[string]int)
+	for i, res := range results {
+		if res.id == "" {
+			continue // goroutine errored
+		}
+		if prev, dup := seenIDs[res.id]; dup {
+			t.Errorf("duplicate ID %q assigned to goroutines %d and %d", res.id, prev, i)
+		}
+		seenIDs[res.id] = i
+		if prev, dup := seenNames[res.name]; dup {
+			t.Errorf("duplicate Name %q assigned to goroutines %d and %d", res.name, prev, i)
+		}
+		seenNames[res.name] = i
+	}
+}
+
 func TestRegistryListSortedByRegistration(t *testing.T) {
 	r := NewRegistry()
 
@@ -144,7 +186,13 @@ func TestRegistryListSortedByRegistration(t *testing.T) {
 	infoNew := protocol.ServiceInfo{ID: "newest", Name: "newest", ConnectedAt: time.Now().Add(2 * time.Second)}
 	infoOld := protocol.ServiceInfo{ID: "oldest", Name: "oldest", ConnectedAt: time.Now()}
 
+	if _, _, err := r.ReserveHandle("newest", "newest"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, err := r.Register(infoNew, nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, _, err := r.ReserveHandle("oldest", "oldest"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := r.Register(infoOld, nil, nil); err != nil {

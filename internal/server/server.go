@@ -116,11 +116,12 @@ func (s *Server) serveLegacyAgent(w http.ResponseWriter, r *http.Request, name, 
 		preferredID = name
 	}
 
-	id, name, err := s.registry.ResolveHandle(preferredID, name)
+	id, name, err := s.registry.ReserveHandle(preferredID, name)
 	if err != nil {
 		http.Error(w, "Failed to allocate service ID", http.StatusInternalServerError)
 		return
 	}
+	defer s.registry.Release(id)
 
 	// Send assigned ID in the response headers
 	w.Header().Set(protocol.HeaderMaekID, id)
@@ -188,11 +189,12 @@ func (s *Server) serveFrameAgent(w http.ResponseWriter, r *http.Request) {
 		preferredID = name
 	}
 
-	id, name, err := s.registry.ResolveHandle(preferredID, name)
+	id, name, err := s.registry.ReserveHandle(preferredID, name)
 	if err != nil {
 		fail("id-allocation", "failed to allocate service ID")
 		return
 	}
+	defer s.registry.Release(id)
 
 	// 2. Acknowledge with the assigned ID.
 	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
