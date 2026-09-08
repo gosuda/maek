@@ -202,6 +202,10 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 
 	serviceID := ack.ID
 	serviceName := ack.Name
+	if serviceName == "" {
+		serviceName = a.cfg.Name
+		log.Printf("[maek-agent] Warning: server did not return assigned Name; using requested name %q", serviceName)
+	}
 	log.Printf("[maek-agent] Connected to server! Assigned Service ID: [%s], Name: '%s' (forwarding to %s)",
 		serviceID, serviceName, a.cfg.Target)
 
