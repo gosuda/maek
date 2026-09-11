@@ -6,35 +6,36 @@ import (
 	"testing"
 )
 
-func TestNegotiateEncodingUsesLocalPreference(t *testing.T) {
-	got, ok := NegotiateEncoding([]ContentEncoding{EncodingGzip, EncodingIdentity}, []ContentEncoding{EncodingIdentity, EncodingGzip})
-	if !ok || got != EncodingIdentity {
-		t.Fatalf("got %q, %v", got, ok)
-	}
-}
-
-func TestIntersectCapabilities(t *testing.T) {
-	got := IntersectCapabilities(
-		[]Capability{CapabilityStreamEncoding, CapabilityMultiService},
-		[]Capability{CapabilityMultiService},
-	)
-	want := []Capability{CapabilityMultiService}
-	if !reflect.DeepEqual(got, want) {
+func TestSupportedSubprotocolsV2Only(t *testing.T) {
+	if got, want := SupportedSubprotocols(), []string{"maek.v2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
+	if got, ok := ParseSubprotocol("maek.v2"); !ok || got != Version2 {
+		t.Fatalf("got %d, %v", got, ok)
+	}
 }
 
-func TestStreamHeaderRoundTrip(t *testing.T) {
-	want := StreamHeader{Version: Version1, Kind: StreamHTTP, Encoding: EncodingGzip, ServiceID: "demo"}
+func TestEnvelopeRoundTrip(t *testing.T) {
+	want := RegisterServices{
+		SoftwareVersion: "test",
+		Services:        []ServiceSpec{{Alias: "demo"}},
+	}
 	var buf bytes.Buffer
-	if err := WriteStreamHeader(&buf, want); err != nil {
+	if err := EncodeEnvelope(&buf, MsgRegister, want); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadStreamHeader(&buf)
+	env, err := DecodeEnvelope(&buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
+	if env.Type != MsgRegister {
+		t.Fatalf("got type %q", env.Type)
+	}
+	got, err := DecodePayload[RegisterServices](env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

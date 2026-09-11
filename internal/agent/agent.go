@@ -172,15 +172,16 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
 	defer wsConn.Close(websocket.StatusNormalClosure, "agent stopping")
-
-	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer hsCancel()
-	sessionConfig, err := tunnel.ClientNegotiate(hsCtx, wsConn, version.Version)
-	if err != nil {
+	if err := tunnel.ValidateSubprotocol(wsConn); err != nil {
 		return fmt.Errorf("protocol negotiation failed: %w", err)
 	}
 
-	register := protocol.RegisterServices{Services: make([]protocol.ServiceSpec, 0, len(a.services))}
+	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer hsCancel()
+	register := protocol.RegisterServices{
+		SoftwareVersion: version.Version,
+		Services:        make([]protocol.ServiceSpec, 0, len(a.services)),
+	}
 	for _, svc := range a.services {
 		register.Services = append(register.Services, protocol.ServiceSpec{
 			Alias:       svc.cfg.Alias,
@@ -188,14 +189,14 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 			Thumbnail:   svc.cfg.Thumbnail,
 		})
 	}
-	if err := tunnel.WriteControl(hsCtx, wsConn, protocol.MsgRegisterV1, register); err != nil {
+	if err := tunnel.WriteControl(hsCtx, wsConn, protocol.MsgRegister, register); err != nil {
 		return fmt.Errorf("register send failed: %w", err)
 	}
 	env, err := tunnel.ReadControl(hsCtx, wsConn)
 	if err != nil {
 		return fmt.Errorf("register response failed: %w", err)
 	}
-	if env.Type == protocol.MsgErrorV1 {
+	if env.Type == protocol.MsgError {
 		failure, decodeErr := protocol.DecodePayload[protocol.ProtocolError](env)
 		if decodeErr != nil {
 			return decodeErr
@@ -221,12 +222,8 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 		proxies[assigned.ID] = a.services[assigned.Index].proxy
 		log.Printf("[maek-agent] registered alias %q as [%s] -> %s", assigned.Alias, assigned.ID, a.services[assigned.Index].cfg.Target)
 	}
-	if err := tunnel.WriteControl(hsCtx, wsConn, protocol.MsgStartV1, struct{}{}); err != nil {
-		return fmt.Errorf("start send failed: %w", err)
-	}
 
-	netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
-	tunnelSession, err := tunnel.NewClient(netConn, sessionConfig)
+	tunnelSession, err := tunnel.NewClient(wsConn)
 	if err != nil {
 		return fmt.Errorf("tunnel session init failed: %w", err)
 	}
