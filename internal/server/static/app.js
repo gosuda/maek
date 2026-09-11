@@ -85,7 +85,6 @@
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const alias = document.getElementById('param-alias').value.trim();
       const target = document.getElementById('param-target').value.trim() || 'http://localhost:3000';
-      const id = document.getElementById('param-id').value.trim();
       const desc = document.getElementById('param-desc').value.trim();
       const effectiveOS = currentOS === 'go' ? detectOS() : currentOS;
       const isPowerShell = effectiveOS === 'windows';
@@ -93,7 +92,6 @@
       const cont = isPowerShell ? '`' : '\\';
       const lines = [`maek agent ${cont}`, `  --server ${wsProto}//${host} ${cont}`];
       if (alias) lines.push(`  --alias ${q(alias)} ${cont}`);
-      if (id) lines.push(`  --id ${q(id)} ${cont}`);
       if (desc) lines.push(`  --desc ${q(desc)} ${cont}`);
       lines.push(`  --target ${q(target)}`);
       document.getElementById('cmd-output').textContent = lines.join('\n');
@@ -153,7 +151,7 @@
         const color = pickColor(alias);
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
         const hasDesc = Boolean(svc.description && svc.description.trim());
-        const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(alias)}`;
+        const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(svc.id)}`;
         const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" ${window.location.protocol}//${host}/`;
         const tab = snippetTabs[svc.id] || 'url';
         const isUrl = tab === 'url';
@@ -167,7 +165,7 @@
             <div class="service-body">
               <div class="service-top">
                 <div class="service-identity"><div class="name-line"><span class="service-name">${escapeHtml(alias)}</span><span class="dot">&middot;</span><span class="service-time">${timeAgo(svc.connected_at)}</span></div></div>
-                <a class="connect-button" href="/_maek/${encodeURIComponent(alias)}">Connect &rarr;</a>
+                <a class="connect-button" href="/_maek/${encodeURIComponent(svc.id)}">Connect &rarr;</a>
               </div>
               ${hasDesc ? `<div class="service-desc">${escapeHtml(svc.description)}</div>` : ''}
               ${mediaBoxHtml}

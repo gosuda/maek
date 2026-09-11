@@ -8,6 +8,8 @@ import (
 
 var streamMagic = [4]byte{'M', 'A', 'E', 'K'}
 
+const MaxServiceIDLength = 64
+
 type StreamKind uint8
 
 const (
@@ -50,7 +52,7 @@ func WriteStreamHeader(w io.Writer, h StreamHeader) error {
 	if h.Kind == 0 {
 		return fmt.Errorf("stream header: missing stream kind")
 	}
-	if len(h.ServiceID) > MaxIDLength {
+	if len(h.ServiceID) > MaxServiceIDLength {
 		return fmt.Errorf("stream header: service id too long")
 	}
 	enc, err := encodingCode(h.Encoding)
@@ -84,7 +86,7 @@ func ReadStreamHeader(r io.Reader) (StreamHeader, error) {
 		return StreamHeader{}, err
 	}
 	idLen := int(binary.BigEndian.Uint16(fixed[8:10]))
-	if idLen > MaxIDLength {
+	if idLen > MaxServiceIDLength {
 		return StreamHeader{}, fmt.Errorf("stream header: service id too long")
 	}
 	id := make([]byte, idLen)

@@ -89,43 +89,24 @@ func (r *Registry) idTakenLocked(id string) bool {
 	return ok
 }
 
-func (r *Registry) allocateIDLocked(preferred string) (string, error) {
-	clean := protocol.SanitizePreferredID(preferred)
-	if protocol.IsReservedHandle(clean) {
-		clean = "app-" + clean
-	}
-	if clean == "" {
-		for {
-			id, err := protocol.GenerateID()
-			if err != nil {
-				return "", err
-			}
-			if !r.idTakenLocked(id) && !protocol.IsReservedHandle(id) {
-				return id, nil
-			}
+func (r *Registry) allocateIDLocked() (string, error) {
+	for {
+		id, err := protocol.GenerateID()
+		if err != nil {
+			return "", err
 		}
-	}
-	if !r.idTakenLocked(clean) {
-		return clean, nil
-	}
-	for counter := 2; ; counter++ {
-		suffix := fmt.Sprintf("-%d", counter)
-		base := clean
-		if len(base)+len(suffix) > protocol.MaxIDLength {
-			base = base[:protocol.MaxIDLength-len(suffix)]
-		}
-		candidate := base + suffix
-		if !r.idTakenLocked(candidate) {
-			return candidate, nil
+		if !r.idTakenLocked(id) && !protocol.IsReservedHandle(id) {
+			return id, nil
 		}
 	}
 }
 
-func (r *Registry) ReserveID(preferred string) (*Reservation, error) {
+// ReserveID allocates an opaque server-owned ID and holds it until Activate or Release.
+func (r *Registry) ReserveID() (*Reservation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id, err := r.allocateIDLocked(preferred)
+	id, err := r.allocateIDLocked()
 	if err != nil {
 		return nil, err
 	}

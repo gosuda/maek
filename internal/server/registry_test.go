@@ -5,36 +5,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosuda/maek/internal/protocol"
 	"github.com/gosuda/maek/internal/service"
 )
 
-func activateTestService(t *testing.T, r *Registry, id, alias string, connectedAt time.Time) *Registration {
+func activateTestService(t *testing.T, r *Registry, alias string, connectedAt time.Time) (*Registration, string) {
 	t.Helper()
-	reservation, err := r.ReserveID(id)
+	reservation, err := r.ReserveID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, registration, err := r.Activate(reservation, service.Info{ID: reservation.ID(), Alias: alias, ConnectedAt: connectedAt}, nil)
+	id := reservation.ID()
+	_, registration, err := r.Activate(reservation, service.Info{ID: id, Alias: alias, ConnectedAt: connectedAt}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return registration
+	return registration, id
 }
 
-func TestRegistryReservationSuffix(t *testing.T) {
+func TestRegistryReservationGeneratesOpaqueID(t *testing.T) {
 	r := NewRegistry()
-	first, err := r.ReserveID("demo")
+	reservation, err := r.ReserveID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Release()
-	second, err := r.ReserveID("demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer second.Release()
-	if first.ID() != "demo" || second.ID() != "demo-2" {
-		t.Fatalf("got %q, %q", first.ID(), second.ID())
+	defer reservation.Release()
+	if len(reservation.ID()) != protocol.IDLength {
+		t.Fatalf("got ID %q with length %d", reservation.ID(), len(reservation.ID()))
 	}
 }
 
@@ -47,7 +44,7 @@ func TestRegistryConcurrentReservationsAreUnique(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			reservation, err := r.ReserveID("demo")
+			reservation, err := r.ReserveID()
 			if err != nil {
 				t.Errorf("reserve %d: %v", i, err)
 				return
@@ -76,37 +73,45 @@ func TestRegistryConcurrentReservationsAreUnique(t *testing.T) {
 func TestRegistryAliasOldestActiveWins(t *testing.T) {
 	r := NewRegistry()
 	now := time.Now()
-	oldest := activateTestService(t, r, "owner-a", "shared", now)
-	newer := activateTestService(t, r, "owner-b", "shared", now.Add(time.Second))
+	oldest, oldestID := activateTestService(t, r, "shared", now)
+	newer, newerID := activateTestService(t, r, "shared", now.Add(time.Second))
 	defer newer.Close()
 
 	got, ok := r.Get("shared")
-	if !ok || got.Info.ID != "owner-a" {
-		t.Fatalf("got %+v, %v; want owner-a", got, ok)
+	if !ok || got.Info.ID != oldestID {
+		t.Fatalf("got %+v, %v; want %s", got, ok, oldestID)
 	}
 	oldest.Close()
 	got, ok = r.Get("shared")
-	if !ok || got.Info.ID != "owner-b" {
-		t.Fatalf("got %+v, %v; want owner-b after oldest closes", got, ok)
+	if !ok || got.Info.ID != newerID {
+		t.Fatalf("got %+v, %v; want %s after oldest closes", got, ok, newerID)
 	}
 }
 
 func TestRegistrationCloseIsGenerationScoped(t *testing.T) {
 	r := NewRegistry()
 	now := time.Now()
-	first := activateTestService(t, r, "demo", "shared", now)
+	first, id := activateTestService(t, r, "shared", now)
 
-	// Simulate runtime removal before its deferred Registration.Close executes.
+	// Simulate a rare ID reuse after the old runtime entry disappeared but
+	// before its deferred Registration.Close executes.
 	r.mu.Lock()
-	delete(r.services, "demo")
+	delete(r.services, id)
+	r.generation++
+	generation := r.generation
+	r.pending[id] = generation
 	r.mu.Unlock()
 
-	second := activateTestService(t, r, "demo", "shared", now.Add(time.Second))
+	reservation := &Reservation{registry: r, id: id, generation: generation}
+	_, second, err := r.Activate(reservation, service.Info{ID: id, Alias: "shared", ConnectedAt: now.Add(time.Second)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer second.Close()
-	first.Close()
 
-	got, ok := r.Get("demo")
-	if !ok || got.Info.ID != "demo" {
+	first.Close()
+	got, ok := r.Get(id)
+	if !ok || got.Info.ID != id {
 		t.Fatal("stale registration cleanup removed the new generation")
 	}
 }
@@ -114,12 +119,12 @@ func TestRegistrationCloseIsGenerationScoped(t *testing.T) {
 func TestRegistryListSortedOldestFirst(t *testing.T) {
 	r := NewRegistry()
 	now := time.Now()
-	newer := activateTestService(t, r, "new", "new", now.Add(time.Second))
-	older := activateTestService(t, r, "old", "old", now)
+	newer, newerID := activateTestService(t, r, "new", now.Add(time.Second))
+	older, olderID := activateTestService(t, r, "old", now)
 	defer newer.Close()
 	defer older.Close()
 	list := r.List()
-	if len(list) != 2 || list[0].ID != "old" || list[1].ID != "new" {
+	if len(list) != 2 || list[0].ID != olderID || list[1].ID != newerID {
 		t.Fatalf("unexpected order: %+v", list)
 	}
 }

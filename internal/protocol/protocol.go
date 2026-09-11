@@ -25,9 +25,8 @@ const (
 	EndpointAppJS      = "/_maek/app.js"
 	EndpointDownload   = "/_maek/download"
 
-	IDLength    = 6
-	MaxIDLength = 32
-	charset     = "abcdefghijklmnopqrstuvwxyz0123456789"
+	IDLength = 6
+	charset  = "abcdefghijklmnopqrstuvwxyz0123456789"
 )
 
 func GenerateID() (string, error) {
@@ -42,20 +41,6 @@ func GenerateID() (string, error) {
 		sb.WriteByte(charset[n.Int64()])
 	}
 	return sb.String(), nil
-}
-
-func SanitizePreferredID(id string) string {
-	id = strings.TrimSpace(strings.ToLower(id))
-	var sb strings.Builder
-	for _, r := range id {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			sb.WriteRune(r)
-			if sb.Len() >= MaxIDLength {
-				break
-			}
-		}
-	}
-	return sb.String()
 }
 
 func IsReservedHandle(handle string) bool {

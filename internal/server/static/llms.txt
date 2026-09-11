@@ -20,8 +20,8 @@ This server's base URL: __SERVER_URL__
 
    maek agent --server __SERVER_URL__ --alias my-app --target http://localhost:3000
 
-   Flags: --alias (human-readable routing alias) | --id (preferred unique id, max 32 chars)
-   | --desc (short description) | --target (local URL)
+   Flags: --alias (human-readable routing alias) | --desc (short description)
+   | --target (local URL)
 
 3. Verify registration - poll until your service appears:
 
@@ -30,12 +30,14 @@ This server's base URL: __SERVER_URL__
 
 4. Your app is now public:
 
-   - Browser URL: __SERVER_URL__/_maek/my-app
+   - Stable browser URL: __SERVER_URL__/_maek/ab12cd
    - Header routing (curl/API): curl -H "X-Maek-Service: ab12cd" __SERVER_URL__/
+   - Alias routing is also available at __SERVER_URL__/_maek/my-app
 
 ## Alias semantics
 
-- IDs are globally unique while active.
+- IDs are opaque and assigned by the server.
+- IDs are globally unique while active and are the canonical share target.
 - Aliases may be shared by multiple active services.
 - Alias routing selects the oldest active service; when it disconnects, the next-oldest service becomes active for that alias.
 
@@ -48,5 +50,5 @@ This server's base URL: __SERVER_URL__
 ## Notes
 
 - No auth anywhere. Closing the agent process closes its tunnels.
-- Browser URLs accept the service alias or id: __SERVER_URL__/_maek/<alias-or-id>
+- Browser routes accept either the server-issued ID or an alias: __SERVER_URL__/_maek/<id-or-alias>
 - Source: https://github.com/gosuda/maek

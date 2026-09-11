@@ -50,7 +50,6 @@ Server Flags:
 Agent Flags:
   -server, -s string     Central maek server URL (e.g. "ws://vps-ip:8080")
   -alias, -a string      Human-readable service alias (optional, auto-detected)
-  -id, -i string         Preferred custom service ID (max 32 chars, optional)
   -desc, -d string       Short description (optional, auto-detected)
   -thumb string          Thumbnail URL or image avatar (optional, auto-detected)
   -target, -t string     Local target HTTP URL (default "http://localhost:3000")
@@ -58,7 +57,7 @@ Agent Flags:
 Examples:
   maek server -p 8080
   maek agent -s ws://1.2.3.4:8080 -t http://localhost:3000
-  maek agent -s ws://1.2.3.4:8080 -a dev-app -i my-dev -t http://localhost:3000
+  maek agent -s ws://1.2.3.4:8080 -a dev-app -t http://localhost:3000
 `, version.Version)
 }
 
@@ -87,8 +86,6 @@ func runAgent(args []string) {
 	sShort := fs.String("s", "", "maek server URL (short)")
 	alias := fs.String("alias", "", "Service alias (optional, auto-detected)")
 	aShort := fs.String("a", "", "Service alias (short)")
-	prefID := fs.String("id", "", "Preferred service ID")
-	iShort := fs.String("i", "", "Preferred service ID (short)")
 	desc := fs.String("desc", "", "Short description")
 	dShort := fs.String("d", "", "Short description (short)")
 	thumb := fs.String("thumb", "", "Thumbnail URL or image avatar")
@@ -108,10 +105,6 @@ func runAgent(args []string) {
 	if *aShort != "" {
 		serviceAlias = *aShort
 	}
-	preferredID := *prefID
-	if *iShort != "" {
-		preferredID = *iShort
-	}
 	serviceDesc := *desc
 	if *dShort != "" {
 		serviceDesc = *dShort
@@ -125,7 +118,6 @@ func runAgent(args []string) {
 		ServerURL: srvURL,
 		Services: []agent.ServiceConfig{{
 			Alias:       serviceAlias,
-			PreferredID: preferredID,
 			Description: serviceDesc,
 			Thumbnail:   *thumb,
 			Target:      targetURL,

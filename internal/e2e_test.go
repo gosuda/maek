@@ -65,8 +65,8 @@ func TestE2E_MultiServiceSessionAndAliasRouting(t *testing.T) {
 	ag, err := agent.NewAgent(agent.Config{
 		ServerURL: master.URL,
 		Services: []agent.ServiceConfig{
-			{Alias: "shared", PreferredID: "owner-a", Target: targetA.URL},
-			{Alias: "shared", PreferredID: "owner-b", Target: targetB.URL},
+			{Alias: "shared", Target: targetA.URL},
+			{Alias: "shared", Target: targetB.URL},
 		},
 	})
 	if err != nil {
@@ -84,11 +84,15 @@ func TestE2E_MultiServiceSessionAndAliasRouting(t *testing.T) {
 	})
 
 	waitForServices(t, srv, 2)
-	if got := routedGET(t, master.URL, "owner-a"); got != "target-a" {
-		t.Fatalf("owner-a routed to %q", got)
+	services := srv.Registry().List()
+	if services[0].ID == services[1].ID || services[0].ID == "" || services[1].ID == "" {
+		t.Fatalf("invalid server-assigned IDs: %+v", services)
 	}
-	if got := routedGET(t, master.URL, "owner-b"); got != "target-b" {
-		t.Fatalf("owner-b routed to %q", got)
+	if got := routedGET(t, master.URL, services[0].ID); got != "target-a" {
+		t.Fatalf("first ID routed to %q", got)
+	}
+	if got := routedGET(t, master.URL, services[1].ID); got != "target-b" {
+		t.Fatalf("second ID routed to %q", got)
 	}
 	if got := routedGET(t, master.URL, "shared"); got != "target-a" {
 		t.Fatalf("shared alias routed to %q, want oldest target-a", got)

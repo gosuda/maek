@@ -45,8 +45,6 @@ const (
 )
 
 func SupportedEncodings() []ContentEncoding {
-	// Identity remains the default until compression is explicitly enabled by
-	// configuration. Gzip is part of the v1 wire contract and can be negotiated.
 	return []ContentEncoding{EncodingIdentity, EncodingGzip}
 }
 
@@ -117,7 +115,6 @@ type Welcome struct {
 }
 
 type ServiceSpec struct {
-	PreferredID string `json:"preferred_id,omitempty"`
 	Alias       string `json:"alias,omitempty"`
 	Description string `json:"description,omitempty"`
 	Thumbnail   string `json:"thumbnail,omitempty"`

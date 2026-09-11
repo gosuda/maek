@@ -11,9 +11,9 @@ import (
 	"github.com/gosuda/maek/internal/service"
 )
 
-func registerDirectTestService(t *testing.T, srv *Server, info service.Info) *Registration {
+func registerDirectTestService(t *testing.T, srv *Server, info service.Info) (*Registration, string) {
 	t.Helper()
-	reservation, err := srv.Registry().ReserveID(info.ID)
+	reservation, err := srv.Registry().ReserveID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,15 +23,15 @@ func registerDirectTestService(t *testing.T, srv *Server, info service.Info) *Re
 		t.Fatal(err)
 	}
 	t.Cleanup(registration.Close)
-	return registration
+	return registration, info.ID
 }
 
-func TestDirectServiceURLUsesAlias(t *testing.T) {
+func TestDirectServiceURLUsesAliasAndID(t *testing.T) {
 	srv := NewServer(Config{Addr: ":0"})
-	registerDirectTestService(t, srv, service.Info{ID: "svc123", Alias: "my-service", ConnectedAt: time.Now()})
+	_, id := registerDirectTestService(t, srv, service.Info{Alias: "my-service", ConnectedAt: time.Now()})
 	handler := srv.Handler()
 
-	for _, path := range []string{"/_maek/my-service", "/_maek/svc123"} {
+	for _, path := range []string{"/_maek/my-service", "/_maek/" + id} {
 		req := httptest.NewRequest("GET", path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -46,7 +46,7 @@ func TestDirectServiceURLUsesAlias(t *testing.T) {
 
 func TestDirectAliasWithSubpath(t *testing.T) {
 	srv := NewServer(Config{Addr: ":0"})
-	registerDirectTestService(t, srv, service.Info{ID: "svc123", Alias: "my-service", ConnectedAt: time.Now()})
+	registerDirectTestService(t, srv, service.Info{Alias: "my-service", ConnectedAt: time.Now()})
 	req := httptest.NewRequest("GET", "/_maek/my-service/api/docs?page=2", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -58,8 +58,8 @@ func TestDirectAliasWithSubpath(t *testing.T) {
 func TestDirectDuplicateAliasUsesOldest(t *testing.T) {
 	srv := NewServer(Config{Addr: ":0"})
 	now := time.Now()
-	registerDirectTestService(t, srv, service.Info{ID: "owner-a", Alias: "shared", ConnectedAt: now})
-	registerDirectTestService(t, srv, service.Info{ID: "owner-b", Alias: "shared", ConnectedAt: now.Add(time.Second)})
+	_, oldestID := registerDirectTestService(t, srv, service.Info{Alias: "shared", ConnectedAt: now})
+	registerDirectTestService(t, srv, service.Info{Alias: "shared", ConnectedAt: now.Add(time.Second)})
 
 	req := httptest.NewRequest("GET", "/_maek/shared", nil)
 	rec := httptest.NewRecorder()
@@ -67,8 +67,8 @@ func TestDirectDuplicateAliasUsesOldest(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	for _, cookie := range cookies {
 		if cookie.Name == protocol.CookieService {
-			if cookie.Value != "owner-a" {
-				t.Fatalf("alias resolved to %q, want owner-a", cookie.Value)
+			if cookie.Value != oldestID {
+				t.Fatalf("alias resolved to %q, want %q", cookie.Value, oldestID)
 			}
 			return
 		}
@@ -78,8 +78,7 @@ func TestDirectDuplicateAliasUsesOldest(t *testing.T) {
 
 func TestDirectAliasOpenGraphAndThumbnail(t *testing.T) {
 	srv := NewServer(Config{Addr: ":0"})
-	registerDirectTestService(t, srv, service.Info{
-		ID:          "cs456",
+	_, id := registerDirectTestService(t, srv, service.Info{
 		Alias:       "code-server login",
 		Description: "My Code Server Environment",
 		Thumbnail:   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -94,7 +93,7 @@ func TestDirectAliasOpenGraphAndThumbnail(t *testing.T) {
 		t.Fatalf("unexpected OpenGraph response: %d %s", botRec.Code, botRec.Body.String())
 	}
 
-	thumbReq := httptest.NewRequest("GET", "/_maek/thumb?id=cs456", nil)
+	thumbReq := httptest.NewRequest("GET", "/_maek/thumb?id="+id, nil)
 	thumbRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(thumbRec, thumbReq)
 	if thumbRec.Code != http.StatusOK || thumbRec.Header().Get("Content-Type") != "image/png" || thumbRec.Body.Len() == 0 {

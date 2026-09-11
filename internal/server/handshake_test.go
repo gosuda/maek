@@ -34,8 +34,8 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 	}
 
 	request := protocol.RegisterServices{Services: []protocol.ServiceSpec{
-		{PreferredID: "owner-a", Alias: "shared"},
-		{PreferredID: "owner-b", Alias: "shared"},
+		{Alias: "shared"},
+		{Alias: "shared"},
 	}}
 	if err := tunnel.WriteControl(ctx, conn, protocol.MsgRegisterV1, request); err != nil {
 		t.Fatal(err)
@@ -50,6 +50,9 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 	}
 	if env.Type != protocol.MsgRegistered || len(registered.Services) != 2 {
 		t.Fatalf("unexpected response: %+v", registered)
+	}
+	if registered.Services[0].ID == "" || registered.Services[1].ID == "" || registered.Services[0].ID == registered.Services[1].ID {
+		t.Fatalf("server did not assign distinct IDs: %+v", registered.Services)
 	}
 	if err := tunnel.WriteControl(ctx, conn, protocol.MsgStartV1, struct{}{}); err != nil {
 		t.Fatal(err)
@@ -73,7 +76,7 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 		t.Fatalf("got %d registered services", len(got))
 	}
 	entry, ok := srv.Registry().Get("shared")
-	if !ok || entry.Info.ID != "owner-a" {
+	if !ok || entry.Info.ID != registered.Services[0].ID {
 		t.Fatalf("oldest alias owner not selected: %+v", entry)
 	}
 }

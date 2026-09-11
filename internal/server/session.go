@@ -65,11 +65,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		if alias == "" {
 			alias = "app"
 		}
-		preferredID := strings.TrimSpace(spec.PreferredID)
-		if preferredID == "" {
-			preferredID = alias
-		}
-		reservation, err := s.registry.ReserveID(preferredID)
+		reservation, err := s.registry.ReserveID()
 		if err != nil {
 			for _, item := range pending {
 				item.reservation.Release()

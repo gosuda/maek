@@ -10,7 +10,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docker Image](https://img.shields.io/badge/Docker-~15MB-2496ED?style=flat&logo=docker)](https://hub.docker.com/)
+[![Docker Image](https://img.shields.io/badge/Docker-~15MB-2496ED?style=flat)](https://hub.docker.com/)
 [![Zero Config](https://img.shields.io/badge/DNS-Zero_Config-success?style=flat)](#zero-config-routing-no-wildcard-dns)
 [![Multiplexing](https://img.shields.io/badge/Tunnel-Yamux_over_WebSocket-purple?style=flat)](#architecture)
 
@@ -49,9 +49,9 @@ Run one tiny binary on a VPS and expose multiple private services without accoun
 
 ### Single-IP, Zero-DNS Multi-Tenant Routing
 
-* **3-Way Routing Engine**: session cookies for browsers, direct alias URLs (`/_maek/:alias`), and `X-Maek-Service` headers for APIs.
+* **3-Way Routing Engine**: session cookies for browsers, direct service URLs (`/_maek/:id`), and `X-Maek-Service` headers for APIs.
 * **Aliases are intentionally non-unique**: the oldest active service owning an alias receives alias-based traffic; when it disconnects the next-oldest active service takes over.
-* **IDs are unique while active** and are safe to use for deterministic routing.
+* **IDs are opaque, server-assigned, and unique while active**, making ID URLs the canonical deterministic share target.
 * **Smart Messenger Previews** and an injected floating widget remain available for proxied HTML services.
 
 ### Versioned Wire Protocol
@@ -68,7 +68,7 @@ Protocol v1 includes:
 
 ### Concurrency-safe Service Lifecycle
 
-Service IDs are reserved before registration commits. Registry cleanup is generation-scoped, so a stale connection cannot delete a newer service that later reused the same ID.
+The server reserves generated IDs before registration commits. Registry cleanup is generation-scoped, so a stale connection cannot delete a newer service if an ID is ever reused after a collision or reconnect lifecycle.
 
 ---
 
@@ -93,7 +93,7 @@ Connection setup:
 WebSocket upgrade (maek.vN)
   -> HELLO / WELCOME
   -> REGISTER [service...]
-  -> REGISTERED [assigned ID...]
+  -> REGISTERED [server-assigned ID...]
   -> START
   -> Yamux data plane
 ```
@@ -134,18 +134,21 @@ irm http://<VPS-IP>:8080/_maek/install.ps1 | iex
 # Zero-config (alias/metadata auto-detected from target)
 maek agent -s ws://<VPS-IP>:8080 -t http://localhost:3000
 
-# Custom alias and preferred ID
-maek agent -s ws://<VPS-IP>:8080 -a dev-app -i my-app -t http://localhost:3000
+# Custom alias
+maek agent -s ws://<VPS-IP>:8080 -a dev-app -t http://localhost:3000
 ```
+
+The server assigns the service ID after registration.
 
 ### 4. Access & Share
 
 * **Web Catalog**: `http://<VPS-IP>:8080/`
-* **Alias URL**: `http://<VPS-IP>:8080/_maek/dev-app`
-* **ID routing**:
+* **Canonical ID URL**: `http://<VPS-IP>:8080/_maek/ab12cd`
+* **Alias route**: `http://<VPS-IP>:8080/_maek/dev-app` (oldest active service wins if duplicated)
+* **ID header routing**:
 
 ```bash
-curl -H "X-Maek-Service: my-app" http://<VPS-IP>:8080/api/health
+curl -H "X-Maek-Service: ab12cd" http://<VPS-IP>:8080/api/health
 ```
 
 ---
@@ -169,7 +172,6 @@ Usage: maek agent [flags]
 Flags:
   -server, -s string   Central maek server URL
   -alias, -a string    Service alias (optional, auto-detected from target)
-  -id, -i string       Preferred custom service ID (optional, max 32 chars)
   -desc, -d string     Short description (optional, auto-detected)
   -thumb string        Thumbnail URL or image avatar (optional, auto-detected)
   -target, -t string   Local target HTTP URL (default "http://localhost:3000")
@@ -185,9 +187,9 @@ The Go Agent API supports multiple `ServiceConfig` entries in one connection eve
 | :--- | :---: | :--- |
 | `/` | `GET` | Catalog Web UI or proxy to selected service |
 | `/_maek` | `GET` | Clears active routing cookie and returns to catalog |
-| `/_maek/<alias\|id>` | `GET` | Direct service route; duplicate aliases resolve oldest-active-first |
+| `/_maek/<id\|alias>` | `GET` | Direct route; dashboard-generated links use ID, duplicate aliases resolve oldest-active-first |
 | `/_maek/ws` | `GET` | Version-negotiated Agent WebSocket endpoint |
-| `/_maek/api/services` | `GET` | Active service metadata including `id` and `alias` |
+| `/_maek/api/services` | `GET` | Active service metadata including server-assigned `id` and `alias` |
 | `/_maek/thumb` | `GET` | Thumbnail endpoint |
 | `/_maek/install.sh` | `GET` | macOS / Linux installer |
 | `/_maek/install.ps1`| `GET` | Windows installer |

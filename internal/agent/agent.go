@@ -21,7 +21,6 @@ import (
 
 type ServiceConfig struct {
 	Alias       string
-	PreferredID string
 	Description string
 	Thumbnail   string
 	Target      string
@@ -81,9 +80,6 @@ func NewAgent(cfg Config) (*Agent, error) {
 		}
 		if svc.Alias == "" {
 			svc.Alias = "app"
-		}
-		if svc.PreferredID == "" {
-			svc.PreferredID = svc.Alias
 		}
 		cfg.Services[i] = svc
 		services = append(services, localService{cfg: svc, targetURL: parsedTarget, proxy: newTargetProxy(parsedTarget)})
@@ -187,7 +183,6 @@ func (a *Agent) connectAndServe(ctx context.Context) error {
 	register := protocol.RegisterServices{Services: make([]protocol.ServiceSpec, 0, len(a.services))}
 	for _, svc := range a.services {
 		register.Services = append(register.Services, protocol.ServiceSpec{
-			PreferredID: svc.cfg.PreferredID,
 			Alias:       svc.cfg.Alias,
 			Description: svc.cfg.Description,
 			Thumbnail:   svc.cfg.Thumbnail,
