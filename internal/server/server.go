@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -14,10 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/gosuda/maek/internal/protocol"
 	"github.com/gosuda/maek/internal/version"
-	"github.com/hashicorp/yamux"
 )
 
 type Config struct {
@@ -27,30 +25,19 @@ type Config struct {
 type Server struct {
 	addr     string
 	registry *Registry
-	httpSrv  *http.Server
 }
 
 func NewServer(cfg Config) *Server {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
 	}
-	s := &Server{
-		addr:     cfg.Addr,
-		registry: NewRegistry(),
-	}
-	return s
+	return &Server{addr: cfg.Addr, registry: NewRegistry()}
 }
 
-// Registry returns the active service registry.
-func (s *Server) Registry() *Registry {
-	return s.registry
-}
+func (s *Server) Registry() *Registry { return s.registry }
 
-// Handler returns the master HTTP handler for the server.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-
-	// Reserved endpoints
 	mux.HandleFunc(protocol.EndpointWS, s.handleAgentWebSocket)
 	mux.HandleFunc(protocol.EndpointFloatJS, s.handleFloatJS)
 	mux.HandleFunc(protocol.EndpointServices, s.handleServicesAPI)
@@ -64,190 +51,36 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(protocol.EndpointStyleCSS, s.handleStyleCSS)
 	mux.HandleFunc(protocol.EndpointAppJS, s.handleAppJS)
 	mux.HandleFunc(protocol.EndpointDownload, s.handleDownload)
-
-	// Fallback catch-all handler for Web UI and reverse-proxying
 	mux.HandleFunc("/", s.handleProxyOrCatalog)
-
 	return mux
 }
 
-// Start runs the HTTP server listening on the configured address.
-func (s *Server) Start() error {
-	s.httpSrv = &http.Server{
-		Addr:    s.addr,
-		Handler: s.Handler(),
+// Run owns the HTTP server lifecycle. No mutable http.Server pointer is shared
+// between Start and Shutdown goroutines.
+func (s *Server) Run(ctx context.Context) error {
+	httpSrv := &http.Server{Addr: s.addr, Handler: s.Handler()}
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("[maek-server] listening on http://%s", s.addr)
+		errCh <- httpSrv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		return ctx.Err()
 	}
-	log.Printf("[maek-server] Listening on http://%s", s.addr)
-	return s.httpSrv.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server.
-func (s *Server) Shutdown(ctx context.Context) error {
-	if s.httpSrv != nil {
-		return s.httpSrv.Shutdown(ctx)
-	}
-	return nil
-}
-
-// handleAgentWebSocket handles incoming agent WebSocket connections.
-// New agents use the frame-based handshake (register/registered/start
-// control messages, see protocol.AgentMessage). Agents that still send
-// metadata via query parameters fall back to the legacy path.
-func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	id := strings.TrimSpace(r.URL.Query().Get("id"))
-	desc := strings.TrimSpace(r.URL.Query().Get("desc"))
-	thumb := strings.TrimSpace(r.URL.Query().Get("thumb"))
-
-	if name != "" || id != "" || desc != "" || thumb != "" {
-		s.serveLegacyAgent(w, r, name, id, desc, thumb)
-		return
-	}
-	s.serveFrameAgent(w, r)
-}
-
-// serveLegacyAgent implements the pre-frame handshake: metadata in query
-// params, assigned ID in the X-Maek-ID response header, yamux right away.
-func (s *Server) serveLegacyAgent(w http.ResponseWriter, r *http.Request, name, preferredID, desc, thumb string) {
-	if name == "" {
-		name = "app"
-	}
-	if preferredID == "" {
-		preferredID = name
-	}
-
-	id, err := s.registry.AllocateID(preferredID)
-	if err != nil {
-		http.Error(w, "Failed to allocate service ID", http.StatusInternalServerError)
-		return
-	}
-
-	// Send assigned ID in the response headers
-	w.Header().Set(protocol.HeaderMaekID, id)
-
-	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
-	if err != nil {
-		log.Printf("[maek-server] WebSocket handshake failed: %v", err)
-		return
-	}
-
-	s.serveAgentSession(r, wsConn, protocol.ServiceInfo{
-		ID:          id,
-		Name:        name,
-		Description: desc,
-		Thumbnail:   thumb,
-		ConnectedAt: time.Now(),
-		RemoteAddr:  r.RemoteAddr,
-	})
-}
-
-// serveFrameAgent implements the control-message handshake:
-//
-//	agent -> server: {"type":"register","service":{...}}
-//	server -> agent: {"type":"registered","id":"..."}
-//	agent -> server: {"type":"start"}
-//
-// followed by the yamux data plane. The register/start state machine leaves
-// room for multiple registrations per connection in the future; today a
-// second "register" before "start" is rejected.
-func (s *Server) serveFrameAgent(w http.ResponseWriter, r *http.Request) {
-	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
-	if err != nil {
-		log.Printf("[maek-server] WebSocket handshake failed: %v", err)
-		return
-	}
-	defer wsConn.CloseNow()
-
-	hsCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-
-	fail := func(code, msg string) {
-		_ = protocol.WriteAgentMessage(context.Background(), wsConn, protocol.AgentMessage{
-			Type: protocol.MsgTypeError, Code: code, Message: msg,
-		})
-		_ = wsConn.Close(websocket.StatusPolicyViolation, code)
-	}
-
-	// 1. Expect the registration frame.
-	reg, err := protocol.ReadAgentMessage(hsCtx, wsConn)
-	if err != nil || reg.Type != protocol.MsgTypeRegister || reg.Service == nil {
-		fail("invalid-register", "expected a register message")
-		return
-	}
-	svc := *reg.Service
-	name := strings.TrimSpace(svc.Name)
-	if name == "" {
-		name = "app"
-	}
-	preferredID := strings.TrimSpace(svc.ID)
-	if preferredID == "" {
-		preferredID = name
-	}
-
-	id, err := s.registry.AllocateID(preferredID)
-	if err != nil {
-		fail("id-allocation", "failed to allocate service ID")
-		return
-	}
-
-	// 2. Acknowledge with the assigned ID.
-	if err := protocol.WriteAgentMessage(hsCtx, wsConn, protocol.AgentMessage{
-		Type: protocol.MsgTypeRegistered, ID: id,
-	}); err != nil {
-		return
-	}
-
-	// 3. Expect "start" to switch to the data plane.
-	msg, err := protocol.ReadAgentMessage(hsCtx, wsConn)
-	if err != nil || msg.Type != protocol.MsgTypeStart {
-		fail("expected-start", "expected a start message")
-		return
-	}
-
-	s.serveAgentSession(r, wsConn, protocol.ServiceInfo{
-		ID:          id,
-		Name:        name,
-		Description: strings.TrimSpace(svc.Description),
-		Thumbnail:   strings.TrimSpace(svc.Thumbnail),
-		ConnectedAt: time.Now(),
-		RemoteAddr:  r.RemoteAddr,
-	})
-}
-
-// serveAgentSession upgrades an accepted WebSocket to the yamux data plane
-// and registers the service until the connection closes.
-func (s *Server) serveAgentSession(r *http.Request, wsConn *websocket.Conn, info protocol.ServiceInfo) {
-	netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
-
-	yamuxCfg := yamux.DefaultConfig()
-	yamuxCfg.LogOutput = io.Discard
-	session, err := yamux.Server(netConn, yamuxCfg)
-	if err != nil {
-		log.Printf("[maek-server] Failed to create yamux server: %v", err)
-		_ = wsConn.Close(websocket.StatusInternalError, "yamux init failed")
-		return
-	}
-
-	_, err = s.registry.Register(info, session, BuildResponseModifier(info.ID, info.Name))
-	if err != nil {
-		log.Printf("[maek-server] Failed to register service: %v", err)
-		_ = session.Close()
-		return
-	}
-
-	log.Printf("[maek-server] Registered agent '%s' (ID: %s) from %s", info.Name, info.ID, r.RemoteAddr)
-
-	// Block until connection is closed
-	<-session.CloseChan()
-	s.registry.Unregister(info.ID)
-	log.Printf("[maek-server] Agent '%s' (ID: %s) disconnected", info.Name, info.ID)
-}
-
-// handleFloatJS serves the floating widget JavaScript.
 func (s *Server) handleFloatJS(w http.ResponseWriter, r *http.Request) {
 	data, err := GetStaticFile("float.js")
 	if err != nil {
@@ -259,14 +92,11 @@ func (s *Server) handleFloatJS(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// handleServicesAPI returns a JSON list of active services.
 func (s *Server) handleServicesAPI(w http.ResponseWriter, r *http.Request) {
-	services := s.registry.List()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(services)
+	_ = json.NewEncoder(w).Encode(s.registry.List())
 }
 
-// handleVersion returns the build version and commit info in JSON or plain text.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	info := version.Get()
 	if r.Header.Get("Accept") == "text/plain" || r.URL.Query().Get("format") == "text" {
@@ -280,22 +110,19 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	_ = enc.Encode(info)
 }
 
-// handleThumb serves decoded thumbnail images from Base64 Data URIs or redirects to external URLs.
 func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
-	idOrName := strings.TrimSpace(r.URL.Query().Get("id"))
-	if idOrName == "" {
+	idOrAlias := strings.TrimSpace(r.URL.Query().Get("id"))
+	if idOrAlias == "" {
 		http.NotFound(w, r)
 		return
 	}
-	session, ok := s.registry.Get(idOrName)
-	if !ok || session.Info.Thumbnail == "" {
+	entry, ok := s.registry.Get(idOrAlias)
+	if !ok || entry.Info.Thumbnail == "" {
 		http.NotFound(w, r)
 		return
 	}
-
-	thumb := session.Info.Thumbnail
+	thumb := entry.Info.Thumbnail
 	if strings.HasPrefix(thumb, "data:") {
-		// data:<mime>;base64,<encoded-data>
 		parts := strings.SplitN(thumb, ",", 2)
 		if len(parts) == 2 {
 			mime := "image/png"
@@ -304,7 +131,6 @@ func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
 			if len(metaParts) > 0 && metaParts[0] != "" {
 				mime = metaParts[0]
 			}
-
 			data, err := base64.StdEncoding.DecodeString(parts[1])
 			if err == nil {
 				w.Header().Set("Content-Type", mime)
@@ -318,11 +144,9 @@ func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, thumb, http.StatusFound)
 		return
 	}
-
 	http.NotFound(w, r)
 }
 
-// handleInstallScript serves install.sh or install.ps1 with dynamically templated server URL and version.
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	filename := "install.sh"
 	contentType := "text/x-shellscript; charset=utf-8"
@@ -330,54 +154,40 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 		filename = "install.ps1"
 		contentType = "text/plain; charset=utf-8"
 	}
-
 	data, err := GetStaticFile(filename)
 	if err != nil {
 		http.Error(w, "Installer script not found", http.StatusNotFound)
 		return
 	}
-
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
 	serverURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-
-	content := string(data)
-	content = strings.ReplaceAll(content, "__SERVER_URL__", serverURL)
+	content := strings.ReplaceAll(string(data), "__SERVER_URL__", serverURL)
 	content = strings.ReplaceAll(content, "__VERSION__", version.Version)
-
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write([]byte(content))
 }
 
-// handleLLMsTxt serves an LLM/agent-facing quick-start guide (llms.txt
-// convention) with this server's URL dynamically templated in, so agents
-// can copy and run the commands verbatim.
 func (s *Server) handleLLMsTxt(w http.ResponseWriter, r *http.Request) {
 	data, err := GetStaticFile("llms.txt")
 	if err != nil {
 		http.Error(w, "llms.txt not found", http.StatusNotFound)
 		return
 	}
-
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
 	serverURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-
 	content := strings.ReplaceAll(string(data), "__SERVER_URL__", serverURL)
-
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write([]byte(content))
 }
 
-// serveStaticAsset serves a file from the embedded static FS with the
-// given content type. Assets live under the reserved /_maek namespace so
-// they never collide with same-path assets of proxied services.
 func (s *Server) serveStaticAsset(w http.ResponseWriter, r *http.Request, name, contentType string) {
 	data, err := GetStaticFile(name)
 	if err != nil {
@@ -389,22 +199,17 @@ func (s *Server) serveStaticAsset(w http.ResponseWriter, r *http.Request, name, 
 	_, _ = w.Write(data)
 }
 
-// handleStyleCSS serves the dashboard stylesheet.
 func (s *Server) handleStyleCSS(w http.ResponseWriter, r *http.Request) {
 	s.serveStaticAsset(w, r, "style.css", "text/css; charset=utf-8")
 }
 
-// handleAppJS serves the dashboard script.
 func (s *Server) handleAppJS(w http.ResponseWriter, r *http.Request) {
 	s.serveStaticAsset(w, r, "app.js", "application/javascript; charset=utf-8")
 }
 
-// handleDownload serves embedded client packages or falls back to GitHub releases.
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	osName := strings.TrimSpace(r.URL.Query().Get("os"))
 	archName := strings.TrimSpace(r.URL.Query().Get("arch"))
-
-	// Normalize OS
 	switch strings.ToLower(osName) {
 	case "darwin", "mac", "macos", "osx":
 		osName = "Darwin"
@@ -413,15 +218,12 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	default:
 		osName = "Linux"
 	}
-
-	// Normalize Arch
 	switch strings.ToLower(archName) {
 	case "arm64", "aarch64":
 		archName = "arm64"
 	default:
 		archName = "x86_64"
 	}
-
 	var filename, contentType string
 	if osName == "Windows" {
 		filename = "maek_Windows_x86_64.zip"
@@ -430,8 +232,6 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		filename = fmt.Sprintf("maek_%s_%s.tar.gz", osName, archName)
 		contentType = "application/gzip"
 	}
-
-	// 1. Check if binary archive is embedded in static/bin/
 	data, err := GetStaticFile("bin/" + filename)
 	if err == nil && len(data) > 0 {
 		w.Header().Set("Content-Type", contentType)
@@ -441,8 +241,6 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(data)
 		return
 	}
-
-	// 2. Fallback: 302 Redirect to GitHub Releases
 	ver := version.Version
 	if ver == "" || ver == "dev" {
 		ver = "0.1.0"
@@ -452,28 +250,23 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if osName == "Windows" {
 		releaseFilename = fmt.Sprintf("maek_%s_Windows_x86_64.zip", ver)
 	} else {
-		releaseFilename = releaseFilename + ".tar.gz"
+		releaseFilename += ".tar.gz"
 	}
 	githubURL := fmt.Sprintf("https://github.com/gosuda/maek/releases/download/v%s/%s", ver, releaseFilename)
 	http.Redirect(w, r, githubURL, http.StatusFound)
 }
 
-// isBot detects if an incoming request is from a social media crawler or bot.
 func isBot(ua string) bool {
 	if ua == "" {
 		return false
 	}
 	ua = strings.ToLower(ua)
-	botSignatures := []string{
-		"bot", "crawler", "spider", "scraper",
-		"facebookexternalhit", "twitterbot", "slackbot",
-		"discordbot", "telegrambot", "kakaotalk-scrap",
-		"whatsapp", "linkedinbot", "meta-externalagent",
-		"applebot", "bingbot", "googlebot", "yandex",
-		"embedly", "quora link preview", "showyoubot",
+	for _, sig := range []string{
+		"bot", "crawler", "spider", "scraper", "facebookexternalhit", "twitterbot", "slackbot",
+		"discordbot", "telegrambot", "kakaotalk-scrap", "whatsapp", "linkedinbot", "meta-externalagent",
+		"applebot", "bingbot", "googlebot", "yandex", "embedly", "quora link preview", "showyoubot",
 		"outbrain", "pinterest", "vkshare",
-	}
-	for _, sig := range botSignatures {
+	} {
 		if strings.Contains(ua, sig) {
 			return true
 		}
@@ -481,8 +274,7 @@ func isBot(ua string) bool {
 	return false
 }
 
-// serveOpenGraphHTML serves a dedicated HTML page containing OpenGraph metadata for scrapers.
-func (s *Server) serveOpenGraphHTML(w http.ResponseWriter, r *http.Request, session *ServiceSession) {
+func (s *Server) serveOpenGraphHTML(w http.ResponseWriter, r *http.Request, entry *ServiceSession) {
 	host := r.Host
 	if host == "" {
 		host = s.addr
@@ -491,26 +283,22 @@ func (s *Server) serveOpenGraphHTML(w http.ResponseWriter, r *http.Request, sess
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-
 	pageURL := fmt.Sprintf("%s://%s%s", scheme, host, r.URL.RequestURI())
 	imageURL := ""
-	if session.Info.Thumbnail != "" {
-		if strings.HasPrefix(session.Info.Thumbnail, "http://") || strings.HasPrefix(session.Info.Thumbnail, "https://") {
-			imageURL = session.Info.Thumbnail
+	if entry.Info.Thumbnail != "" {
+		if strings.HasPrefix(entry.Info.Thumbnail, "http://") || strings.HasPrefix(entry.Info.Thumbnail, "https://") {
+			imageURL = entry.Info.Thumbnail
 		} else {
-			imageURL = fmt.Sprintf("%s://%s%s?id=%s", scheme, host, protocol.EndpointThumb, session.Info.ID)
+			imageURL = fmt.Sprintf("%s://%s%s?id=%s", scheme, host, protocol.EndpointThumb, entry.Info.ID)
 		}
 	}
-
-	title := html.EscapeString(session.Info.Name)
-	desc := html.EscapeString(session.Info.Description)
+	title := html.EscapeString(entry.Info.Alias)
+	desc := html.EscapeString(entry.Info.Description)
 	if desc == "" {
-		desc = fmt.Sprintf("Tunnel to %s hosted via maek", session.Info.Name)
+		desc = fmt.Sprintf("Tunnel to %s hosted via maek", entry.Info.Alias)
 	}
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head>
@@ -522,13 +310,11 @@ func (s *Server) serveOpenGraphHTML(w http.ResponseWriter, r *http.Request, sess
   <meta property="og:description" content="%s">
   <meta property="og:url" content="%s">
 `, title, title, desc, html.EscapeString(pageURL))
-
 	if imageURL != "" {
 		fmt.Fprintf(w, `  <meta property="og:image" content="%s">
   <meta name="twitter:image" content="%s">
 `, html.EscapeString(imageURL), html.EscapeString(imageURL))
 	}
-
 	fmt.Fprintf(w, `  <meta name="description" content="%s">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="%s">
@@ -543,73 +329,46 @@ func (s *Server) serveOpenGraphHTML(w http.ResponseWriter, r *http.Request, sess
 `, desc, title, desc, title, desc)
 }
 
-// handleSelectService sets the routing cookie and redirects to /.
 func (s *Server) handleSelectService(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-
 	if _, ok := s.registry.Get(id); !ok {
 		http.Error(w, "Service not found or disconnected", http.StatusNotFound)
 		return
 	}
-
-	// Session cookie (no MaxAge, no Expires - cleared on browser close)
-	http.SetCookie(w, &http.Cookie{
-		Name:     protocol.CookieService,
-		Value:    id,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
+	http.SetCookie(w, &http.Cookie{Name: protocol.CookieService, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// handleExitService removes the routing cookie and redirects to /.
 func (s *Server) handleExitService(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     protocol.CookieService,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	http.SetCookie(w, &http.Cookie{Name: protocol.CookieService, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// handleProxyOrCatalog decides whether to show the catalog or proxy to an agent.
 func (s *Server) handleProxyOrCatalog(w http.ResponseWriter, r *http.Request) {
-	// 1. Direct service URL access: /_maek/<service-name-or-id>[/subpath]
 	if strings.HasPrefix(r.URL.Path, "/_maek/") {
 		trimmed := strings.TrimPrefix(r.URL.Path, "/_maek/")
 		parts := strings.SplitN(trimmed, "/", 2)
 		rawKey := parts[0]
-
-		if rawKey != "" && !protocol.IsReservedName(rawKey) {
+		if rawKey != "" && !protocol.IsReservedHandle(rawKey) {
 			serviceKey, err := url.PathUnescape(rawKey)
 			if err != nil {
 				serviceKey = rawKey
 			}
 			serviceKey = strings.TrimSpace(serviceKey)
-
-			session, ok := s.registry.Get(serviceKey)
+			entry, ok := s.registry.Get(serviceKey)
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				fmt.Fprintf(w, "Service '%s' is not found or has disconnected. <a href=\"/\">Return to Catalog</a>", serviceKey)
 				return
 			}
-
-			// OpenGraph crawler detection: If request is from social media bots,
-			// serve rich OpenGraph meta HTML without redirecting
 			if isBot(r.UserAgent()) {
-				s.serveOpenGraphHTML(w, r, session)
+				s.serveOpenGraphHTML(w, r, entry)
 				return
 			}
-
 			subPath := "/"
 			if len(parts) > 1 && parts[1] != "" {
 				subPath = "/" + parts[1]
@@ -617,64 +376,40 @@ func (s *Server) handleProxyOrCatalog(w http.ResponseWriter, r *http.Request) {
 			if r.URL.RawQuery != "" {
 				subPath += "?" + r.URL.RawQuery
 			}
-
-			// Issue routing cookie and redirect to target subpath
-			http.SetCookie(w, &http.Cookie{
-				Name:     protocol.CookieService,
-				Value:    session.Info.ID,
-				Path:     "/",
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
-
+			http.SetCookie(w, &http.Cookie{Name: protocol.CookieService, Value: entry.Info.ID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 			http.Redirect(w, r, subPath, http.StatusFound)
 			return
 		}
 	}
 
-	// 2. Check custom header (priority for CLI / API)
 	serviceKey := strings.TrimSpace(r.Header.Get(protocol.HeaderService))
-
-	// 3. Check session cookie
 	if serviceKey == "" {
 		if cookie, err := r.Cookie(protocol.CookieService); err == nil {
 			serviceKey = strings.TrimSpace(cookie.Value)
 		}
 	}
-
-	// If no service requested:
 	if serviceKey == "" {
 		if r.URL.Path == "/" {
 			s.serveCatalogUI(w, r)
 			return
 		}
-		// For unrouted subpaths, redirect back to catalog
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-
-	// Look up service in registry
-	session, ok := s.registry.Get(serviceKey)
+	entry, ok := s.registry.Get(serviceKey)
 	if !ok {
-		// If service is no longer connected, clear cookie and notify
-		http.SetCookie(w, &http.Cookie{
-			Name:     protocol.CookieService,
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		http.SetCookie(w, &http.Cookie{Name: protocol.CookieService, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Service '%s' is not found or has disconnected. <a href=\"/\">Return to Catalog</a>", serviceKey)
 		return
 	}
-
-	// Proxy to target agent
-	session.ReverseProxy.ServeHTTP(w, r)
+	if entry.ReverseProxy == nil {
+		http.Error(w, "Service tunnel is not ready", http.StatusBadGateway)
+		return
+	}
+	entry.ReverseProxy.ServeHTTP(w, r)
 }
 
-// serveCatalogUI serves the default index.html dashboard.
 func (s *Server) serveCatalogUI(w http.ResponseWriter, r *http.Request) {
 	data, err := GetStaticFile("index.html")
 	if err != nil {
