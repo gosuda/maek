@@ -1,8 +1,7 @@
 # maek
 
-> maek is a zero-auth HTTP tunnel server. It exposes a local application
-> (e.g. http://localhost:3000) at a public URL on this host - no account,
-> no API key.
+> maek is a zero-auth HTTP tunnel server. It exposes local applications
+> at public URLs on this host - no account, no API key.
 
 This server's base URL: __SERVER_URL__
 
@@ -14,29 +13,44 @@ This server's base URL: __SERVER_URL__
      curl -fsSL __SERVER_URL__/_maek/install.sh | sh
    Windows (PowerShell):
      irm __SERVER_URL__/_maek/install.ps1 | iex
-   Or with Go 1.22+:
+   Or with Go:
      go install github.com/gosuda/maek/cmd/maek@latest
 
-2. Start an agent in the background and keep it running
-   (the tunnel exists only while this process is alive):
+2. Start an agent and keep it running:
 
-   maek agent --server __SERVER_URL__ --name my-app --target http://localhost:3000
+   maek agent --server __SERVER_URL__ --alias my-app --target http://localhost:3000
 
-   Flags: --name (display name) | --id (preferred id, max 32 chars)
-   | --desc (short description) | --target (local URL)
+   Flags: --alias (human-readable routing alias) | --desc (short description)
+   | --target (local URL)
 
 3. Verify registration - poll until your service appears:
 
    curl __SERVER_URL__/_maek/api/services
-   -> [{"id":"ab12cd","name":"my-app","connected_at":"..."}]
+   -> [{"id":"my-app","alias":"my-app","connected_at":"..."}]
 
 4. Your app is now public:
 
-   - Browser URL: __SERVER_URL__/_maek/my-app
-   - Header routing (curl/API): curl -H "X-Maek-Service: ab12cd" __SERVER_URL__/
+   - Stable browser URL: __SERVER_URL__/_maek/my-app
+   - Header routing (curl/API): curl -H "X-Maek-Service: my-app" __SERVER_URL__/
+   - Alias routing is also available at __SERVER_URL__/_maek/my-app
+
+## Alias semantics
+
+- IDs are assigned by the server from the Alias.
+- The first active `my-app` gets ID `my-app`; duplicates get `my-app-2`, `my-app-3`, and so on.
+- IDs are globally unique while active and are the canonical share target.
+- Aliases may be shared by multiple active services.
+- Alias routing selects the oldest active service; when it disconnects, the next-oldest service becomes active for that alias.
+- If an Alias cannot produce a safe ID, the server falls back to a random ID.
+
+## Protocol
+
+- Agent and server negotiate a maek WebSocket subprotocol before starting the tunnel.
+- A single agent connection may register multiple services.
+- Yamux data streams carry a maek stream header with service ID and negotiated content encoding.
 
 ## Notes
 
-- No auth anywhere. Closing the agent process closes the tunnel.
-- Browser URLs accept the service name or id: __SERVER_URL__/_maek/<name-or-id>
+- No auth anywhere. Closing the agent process closes its tunnels.
+- Browser routes accept either the server-issued ID or an alias: __SERVER_URL__/_maek/<id-or-alias>
 - Source: https://github.com/gosuda/maek

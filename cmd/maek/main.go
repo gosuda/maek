@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gosuda/maek/internal/agent"
 	"github.com/gosuda/maek/internal/server"
@@ -21,10 +20,7 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
-
-	subcommand := os.Args[1]
-
-	switch subcommand {
+	switch os.Args[1] {
 	case "server", "serve":
 		runServer(os.Args[2:])
 	case "agent", "connect":
@@ -34,7 +30,7 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", subcommand)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
@@ -53,21 +49,15 @@ Server Flags:
 
 Agent Flags:
   -server, -s string     Central maek server URL (e.g. "ws://vps-ip:8080")
-  -name, -n string       Service identifier name (optional, auto-detected from target)
-  -id, -i string         Preferred custom service ID (max 32 chars, optional)
-  -desc, -d string       Short description of the service (optional, auto-detected)
+  -alias, -a string      Human-readable service alias (optional, auto-detected)
+  -desc, -d string       Short description (optional, auto-detected)
   -thumb string          Thumbnail URL or image avatar (optional, auto-detected)
   -target, -t string     Local target HTTP URL (default "http://localhost:3000")
 
 Examples:
-  # Start central server
   maek server -p 8080
-
-  # Zero-config tunnel: auto-detects name, description, and icon from target
   maek agent -s ws://1.2.3.4:8080 -t http://localhost:3000
-
-  # Explicit naming and custom ID
-  maek agent -s ws://1.2.3.4:8080 -n dev-app -i my-dev -t http://localhost:3000
+  maek agent -s ws://1.2.3.4:8080 -a dev-app -t http://localhost:3000
 `, version.Version)
 }
 
@@ -75,11 +65,7 @@ func runServer(args []string) {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
 	addr := fs.String("addr", ":8080", "Address to listen on")
 	pShort := fs.String("p", "", "Address to listen on (short)")
-
-	if err := fs.Parse(args); err != nil {
-		log.Fatalf("Invalid flags: %v", err)
-	}
-
+	_ = fs.Parse(args)
 	listenAddr := *addr
 	if *pShort != "" {
 		listenAddr = *pShort
@@ -87,44 +73,25 @@ func runServer(args []string) {
 	if !strings.Contains(listenAddr, ":") {
 		listenAddr = ":" + listenAddr
 	}
-
-	srv := server.NewServer(server.Config{
-		Addr: listenAddr,
-	})
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	go func() {
-		if err := srv.Start(); err != nil && err.Error() != "http: Server closed" {
-			log.Fatalf("[maek-server] Server error: %v", err)
-		}
-	}()
-
-	<-ctx.Done()
-	log.Println("[maek-server] Shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	if err := server.NewServer(server.Config{Addr: listenAddr}).Run(ctx); err != nil && err != context.Canceled {
+		log.Fatalf("[maek-server] exited: %v", err)
+	}
 }
 
 func runAgent(args []string) {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)
-	serverURL := fs.String("server", "", "maek server URL (e.g. ws://vps-ip:8080)")
+	serverURL := fs.String("server", "", "maek server URL")
 	sShort := fs.String("s", "", "maek server URL (short)")
-	name := fs.String("name", "", "Service name (optional, auto-detected from target)")
-	nShort := fs.String("n", "", "Service name (short)")
-	prefID := fs.String("id", "", "Preferred service ID (max 32 chars, optional)")
-	iShort := fs.String("i", "", "Preferred service ID (short)")
-	desc := fs.String("desc", "", "Short description of the service (optional)")
-	dShort := fs.String("d", "", "Short description of the service (short)")
-	thumb := fs.String("thumb", "", "Thumbnail URL or image avatar (optional)")
-	target := fs.String("target", "http://localhost:3000", "Local target URL (kept private to agent)")
+	alias := fs.String("alias", "", "Service alias (optional, auto-detected)")
+	aShort := fs.String("a", "", "Service alias (short)")
+	desc := fs.String("desc", "", "Short description")
+	dShort := fs.String("d", "", "Short description (short)")
+	thumb := fs.String("thumb", "", "Thumbnail URL or image avatar")
+	target := fs.String("target", "http://localhost:3000", "Local target URL")
 	tShort := fs.String("t", "", "Local target URL (short)")
-
-	if err := fs.Parse(args); err != nil {
-		log.Fatalf("Invalid flags: %v", err)
-	}
+	_ = fs.Parse(args)
 
 	srvURL := *serverURL
 	if *sShort != "" {
@@ -132,50 +99,36 @@ func runAgent(args []string) {
 	}
 	if srvURL == "" {
 		fmt.Fprintln(os.Stderr, "Error: -server (or -s) flag is required.")
-		fs.Usage()
 		os.Exit(1)
 	}
-
-	svcName := *name
-	if *nShort != "" {
-		svcName = *nShort
+	serviceAlias := *alias
+	if *aShort != "" {
+		serviceAlias = *aShort
 	}
-
-	preferredID := *prefID
-	if *iShort != "" {
-		preferredID = *iShort
-	}
-	if preferredID == "" && svcName != "" {
-		preferredID = svcName
-	}
-
-	svcDesc := *desc
+	serviceDesc := *desc
 	if *dShort != "" {
-		svcDesc = *dShort
+		serviceDesc = *dShort
 	}
-
 	targetURL := *target
 	if *tShort != "" {
 		targetURL = *tShort
 	}
 
 	ag, err := agent.NewAgent(agent.Config{
-		ServerURL:   srvURL,
-		Name:        svcName,
-		PreferredID: preferredID,
-		Description: svcDesc,
-		Thumbnail:   *thumb,
-		Target:      targetURL,
+		ServerURL: srvURL,
+		Services: []agent.ServiceConfig{{
+			Alias:       serviceAlias,
+			Description: serviceDesc,
+			Thumbnail:   *thumb,
+			Target:      targetURL,
+		}},
 	})
 	if err != nil {
-		log.Fatalf("[maek-agent] Initialization failed: %v", err)
+		log.Fatalf("[maek-agent] initialization failed: %v", err)
 	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	log.Printf("[maek-agent] Starting agent for '%s' -> %s", ag.Config().Name, targetURL)
-	if err := ag.Start(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("[maek-agent] Exited: %v", err)
+	if err := ag.Run(ctx); err != nil && err != context.Canceled {
+		log.Fatalf("[maek-agent] exited: %v", err)
 	}
 }

@@ -2,124 +2,81 @@ package server
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/gosuda/maek/internal/protocol"
+	"github.com/gosuda/maek/internal/tunnel"
 )
 
-func dialAgentWS(t *testing.T, h http.Handler, path string) *websocket.Conn {
-	t.Helper()
-	httpSrv := httptest.NewServer(h)
-	t.Cleanup(httpSrv.Close)
+func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
 
-	wsURL := "ws://" + httpSrv.Listener.Addr().String() + path
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	wsURL := "ws" + httpSrv.URL[len("http"):] + protocol.EndpointWS
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{Subprotocols: protocol.SupportedSubprotocols()})
 	if err != nil {
-		t.Fatalf("agent websocket dial failed: %v", err)
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = c.CloseNow() })
-	return c
-}
+	defer conn.CloseNow()
 
-func waitForService(t *testing.T, srv *Server, id string) protocol.ServiceInfo {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	config, err := tunnel.ClientNegotiate(ctx, conn, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Version != protocol.Version1 {
+		t.Fatalf("got version %d", config.Version)
+	}
+
+	request := protocol.RegisterServices{Services: []protocol.ServiceSpec{
+		{Alias: "shared"},
+		{Alias: "shared"},
+	}}
+	if err := tunnel.WriteControl(ctx, conn, protocol.MsgRegisterV1, request); err != nil {
+		t.Fatal(err)
+	}
+	env, err := tunnel.ReadControl(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, err := protocol.DecodePayload[protocol.RegisteredServices](env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Type != protocol.MsgRegistered || len(registered.Services) != 2 {
+		t.Fatalf("unexpected response: %+v", registered)
+	}
+	if registered.Services[0].ID != "shared" || registered.Services[1].ID != "shared-2" {
+		t.Fatalf("unexpected alias-derived IDs: %+v", registered.Services)
+	}
+	if err := tunnel.WriteControl(ctx, conn, protocol.MsgStartV1, struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+
+	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+	tunnelSession, err := tunnel.NewClient(netConn, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tunnelSession.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, svc := range srv.Registry().List() {
-			if svc.ID == id {
-				return svc
-			}
+		if len(srv.Registry().List()) == 2 {
+			break
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("service %q did not register within deadline", id)
-	return protocol.ServiceInfo{}
-}
-
-func TestAgentWebSocketFrameHandshake(t *testing.T) {
-	srv := NewServer(Config{Addr: ":0"})
-	c := dialAgentWS(t, srv.Handler(), protocol.EndpointWS)
-	ctx := context.Background()
-
-	// 1. register with metadata
-	if err := protocol.WriteAgentMessage(ctx, c, protocol.AgentMessage{
-		Type: protocol.MsgTypeRegister,
-		Service: &protocol.RegisterRequest{
-			Name:        "frame-app",
-			ID:          "frame-app",
-			Description: "via control frames",
-		},
-	}); err != nil {
-		t.Fatalf("register send failed: %v", err)
+	if got := srv.Registry().List(); len(got) != 2 {
+		t.Fatalf("got %d registered services", len(got))
 	}
-
-	ack, err := protocol.ReadAgentMessage(ctx, c)
-	if err != nil {
-		t.Fatalf("registered read failed: %v", err)
+	entry, ok := srv.Registry().Get("shared")
+	if !ok || entry.Info.ID != registered.Services[0].ID {
+		t.Fatalf("oldest alias owner not selected: %+v", entry)
 	}
-	if ack.Type != protocol.MsgTypeRegistered || ack.ID != "frame-app" {
-		t.Fatalf("expected registered/frame-app, got type=%q id=%q", ack.Type, ack.ID)
-	}
-
-	// 2. start the data plane
-	if err := protocol.WriteAgentMessage(ctx, c, protocol.AgentMessage{
-		Type: protocol.MsgTypeStart,
-	}); err != nil {
-		t.Fatalf("start send failed: %v", err)
-	}
-
-	// 3. service must appear with the registered metadata
-	svc := waitForService(t, srv, "frame-app")
-	if svc.Name != "frame-app" || svc.Description != "via control frames" {
-		t.Errorf("unexpected service info: %+v", svc)
-	}
-}
-
-func TestAgentWebSocketFrameHandshakeRejectsSecondRegister(t *testing.T) {
-	srv := NewServer(Config{Addr: ":0"})
-	c := dialAgentWS(t, srv.Handler(), protocol.EndpointWS)
-	ctx := context.Background()
-
-	register := protocol.AgentMessage{
-		Type:    protocol.MsgTypeRegister,
-		Service: &protocol.RegisterRequest{Name: "first", ID: "first"},
-	}
-	if err := protocol.WriteAgentMessage(ctx, c, register); err != nil {
-		t.Fatalf("register send failed: %v", err)
-	}
-	if ack, err := protocol.ReadAgentMessage(ctx, c); err != nil || ack.Type != protocol.MsgTypeRegistered {
-		t.Fatalf("expected registered, got %+v (%v)", ack, err)
-	}
-
-	register.Service = &protocol.RegisterRequest{Name: "second", ID: "second"}
-	if err := protocol.WriteAgentMessage(ctx, c, register); err != nil {
-		t.Fatalf("second register send failed: %v", err)
-	}
-
-	msg, err := protocol.ReadAgentMessage(ctx, c)
-	if err != nil {
-		t.Fatalf("expected error frame, got read error: %v", err)
-	}
-	if msg.Type != protocol.MsgTypeError {
-		t.Fatalf("expected error frame, got %+v", msg)
-	}
-}
-
-func TestAgentWebSocketLegacyQueryFallback(t *testing.T) {
-	srv := NewServer(Config{Addr: ":0"})
-	// Legacy agents pass metadata via query params and go straight to yamux.
-	c := dialAgentWS(t, srv.Handler(), protocol.EndpointWS+"?name=legacy-app&id=legacy-app")
-
-	svc := waitForService(t, srv, "legacy-app")
-	if svc.Name != "legacy-app" {
-		t.Errorf("unexpected service info: %+v", svc)
-	}
-	_ = c.Close(websocket.StatusNormalClosure, "")
 }

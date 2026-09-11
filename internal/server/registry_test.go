@@ -2,87 +2,165 @@ package server
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gosuda/maek/internal/protocol"
+	"github.com/gosuda/maek/internal/service"
 )
 
-func TestRegistry_AllocateID(t *testing.T) {
+func activateTestService(t *testing.T, r *Registry, alias string, connectedAt time.Time) (*Registration, string) {
+	t.Helper()
+	reservation, err := r.ReserveID(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := reservation.ID()
+	_, registration, err := r.Activate(reservation, service.Info{ID: id, Alias: alias, ConnectedAt: connectedAt}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registration, id
+}
+
+func TestRegistryReservationUsesAliasAsIDBase(t *testing.T) {
 	r := NewRegistry()
-
-	// 1. Empty preferred -> 6-char random
-	id1, err := r.AllocateID("")
+	first, err := r.ReserveID("Test App")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if len(id1) != protocol.IDLength {
-		t.Fatalf("expected length %d, got %d (id: %s)", protocol.IDLength, len(id1), id1)
-	}
-
-	// 2. Unoccupied preferred ID
-	id2, err := r.AllocateID("dev-code")
+	defer first.Release()
+	second, err := r.ReserveID("Test App")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if id2 != "dev-code" {
-		t.Fatalf("expected dev-code, got %s", id2)
-	}
-
-	// Mock registration of id2 so it becomes occupied
-	r.services["dev-code"] = &ServiceSession{}
-
-	// 3. Occupied preferred ID -> should get dev-code-2
-	id3, err := r.AllocateID("dev-code")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if id3 != "dev-code-2" {
-		t.Fatalf("expected dev-code-2, got %s", id3)
-	}
-
-	// Mock registration of dev-code-2
-	r.services["dev-code-2"] = &ServiceSession{}
-
-	// 4. Occupied again -> should get dev-code-3
-	id4, err := r.AllocateID("dev-code")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if id4 != "dev-code-3" {
-		t.Fatalf("expected dev-code-3, got %s", id4)
-	}
-
-	// 5. Length constraint (max 32 characters)
-	longID := strings.Repeat("a", 35)
-	id5, err := r.AllocateID(longID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(id5) > protocol.MaxIDLength {
-		t.Fatalf("id length %d exceeds max %d", len(id5), protocol.MaxIDLength)
+	defer second.Release()
+	if first.ID() != "test-app" || second.ID() != "test-app-2" {
+		t.Fatalf("got %q, %q", first.ID(), second.ID())
 	}
 }
 
-func TestRegistryListSortedByRegistration(t *testing.T) {
+func TestRegistryReservationFallsBackToRandomID(t *testing.T) {
 	r := NewRegistry()
-
-	// Register out of order: newest first.
-	infoNew := protocol.ServiceInfo{ID: "newest", Name: "newest", ConnectedAt: time.Now().Add(2 * time.Second)}
-	infoOld := protocol.ServiceInfo{ID: "oldest", Name: "oldest", ConnectedAt: time.Now()}
-
-	if _, err := r.Register(infoNew, nil, nil); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	reservation, err := r.ReserveID("한글")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := r.Register(infoOld, nil, nil); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	defer reservation.Release()
+	if len(reservation.ID()) != protocol.IDLength {
+		t.Fatalf("got fallback ID %q with length %d", reservation.ID(), len(reservation.ID()))
 	}
+}
 
+func TestRegistryReservationAvoidsReservedHandle(t *testing.T) {
+	r := NewRegistry()
+	reservation, err := r.ReserveID("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reservation.Release()
+	if reservation.ID() != "app-api" {
+		t.Fatalf("got reserved-derived ID %q", reservation.ID())
+	}
+}
+
+func TestRegistryConcurrentReservationsAreUnique(t *testing.T) {
+	const n = 64
+	r := NewRegistry()
+	reservations := make([]*Reservation, n)
+	var wg sync.WaitGroup
+	for i := range reservations {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			reservation, err := r.ReserveID("demo")
+			if err != nil {
+				t.Errorf("reserve %d: %v", i, err)
+				return
+			}
+			reservations[i] = reservation
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]struct{}, n)
+	for _, reservation := range reservations {
+		if reservation == nil {
+			continue
+		}
+		if !strings.HasPrefix(reservation.ID(), "demo") {
+			t.Fatalf("unexpected alias-derived ID %q", reservation.ID())
+		}
+		if _, exists := seen[reservation.ID()]; exists {
+			t.Fatalf("duplicate reservation %q", reservation.ID())
+		}
+		seen[reservation.ID()] = struct{}{}
+		reservation.Release()
+	}
+	if len(seen) != n {
+		t.Fatalf("got %d unique IDs, want %d", len(seen), n)
+	}
+}
+
+func TestRegistryAliasOldestActiveWins(t *testing.T) {
+	r := NewRegistry()
+	now := time.Now()
+	oldest, oldestID := activateTestService(t, r, "shared", now)
+	newer, newerID := activateTestService(t, r, "shared", now.Add(time.Second))
+	defer newer.Close()
+
+	if oldestID != "shared" || newerID != "shared-2" {
+		t.Fatalf("got IDs %q, %q", oldestID, newerID)
+	}
+	got, ok := r.Get("shared")
+	if !ok || got.Info.ID != oldestID {
+		t.Fatalf("got %+v, %v; want %s", got, ok, oldestID)
+	}
+	oldest.Close()
+	got, ok = r.Get("shared")
+	if !ok || got.Info.ID != newerID {
+		t.Fatalf("got %+v, %v; want %s after oldest closes", got, ok, newerID)
+	}
+}
+
+func TestRegistrationCloseIsGenerationScoped(t *testing.T) {
+	r := NewRegistry()
+	now := time.Now()
+	first, id := activateTestService(t, r, "shared", now)
+
+	// Simulate a rare ID reuse after the old runtime entry disappeared but
+	// before its deferred Registration.Close executes.
+	r.mu.Lock()
+	delete(r.services, id)
+	r.generation++
+	generation := r.generation
+	r.pending[id] = generation
+	r.mu.Unlock()
+
+	reservation := &Reservation{registry: r, id: id, generation: generation}
+	_, second, err := r.Activate(reservation, service.Info{ID: id, Alias: "shared", ConnectedAt: now.Add(time.Second)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	first.Close()
+	got, ok := r.Get(id)
+	if !ok || got.Info.ID != id {
+		t.Fatal("stale registration cleanup removed the new generation")
+	}
+}
+
+func TestRegistryListSortedOldestFirst(t *testing.T) {
+	r := NewRegistry()
+	now := time.Now()
+	newer, newerID := activateTestService(t, r, "new", now.Add(time.Second))
+	older, olderID := activateTestService(t, r, "old", now)
+	defer newer.Close()
+	defer older.Close()
 	list := r.List()
-	if len(list) != 2 {
-		t.Fatalf("expected 2 services, got %d", len(list))
-	}
-	if list[0].ID != "oldest" || list[1].ID != "newest" {
-		t.Errorf("expected oldest-first order, got [%s, %s]", list[0].ID, list[1].ID)
+	if len(list) != 2 || list[0].ID != olderID || list[1].ID != newerID {
+		t.Fatalf("unexpected order: %+v", list)
 	}
 }

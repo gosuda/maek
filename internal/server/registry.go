@@ -1,18 +1,15 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"net/http/httputil"
 	"sort"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/gosuda/maek/internal/protocol"
-	"github.com/hashicorp/yamux"
+	"github.com/gosuda/maek/internal/service"
 )
 
 var (
@@ -20,159 +17,229 @@ var (
 	ErrServiceExists   = errors.New("service already exists")
 )
 
-// ServiceSession represents a connected agent and its yamux tunnel.
+// ServiceSession is the routable runtime state associated with an active ID.
+// Registry stores it but does not create or close network resources.
 type ServiceSession struct {
-	Info         protocol.ServiceInfo
-	Session      *yamux.Session
+	Info         service.Info
 	ReverseProxy *httputil.ReverseProxy
+	generation   uint64
 }
 
-// Registry manages all active agent sessions.
+// Registry owns only service identity and lifecycle state.
 type Registry struct {
-	mu       sync.RWMutex
-	services map[string]*ServiceSession // keyed by ID
-	byName   map[string]string          // maps Name -> ID
+	mu         sync.RWMutex
+	services   map[string]*ServiceSession
+	pending    map[string]uint64
+	generation uint64
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		services: make(map[string]*ServiceSession),
-		byName:   make(map[string]string),
+		pending:  make(map[string]uint64),
 	}
 }
 
-// AllocateID determines an available ID: either the sanitized preferred ID,
-// or preferred ID with a numeric suffix (-2, -3, ...), or a random 6-character ID if empty.
-func (r *Registry) AllocateID(preferred string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+type Reservation struct {
+	registry   *Registry
+	id         string
+	generation uint64
+	once       sync.Once
+}
 
-	clean := protocol.SanitizePreferredID(preferred)
-	if protocol.IsReservedName(clean) {
-		clean = "app-" + clean
+func (r *Reservation) ID() string { return r.id }
+
+func (r *Reservation) Release() {
+	if r == nil || r.registry == nil {
+		return
 	}
-	if clean == "" {
-		for {
-			id, err := protocol.GenerateID()
-			if err != nil {
-				return "", err
+	r.once.Do(func() {
+		r.registry.mu.Lock()
+		defer r.registry.mu.Unlock()
+		if generation, ok := r.registry.pending[r.id]; ok && generation == r.generation {
+			delete(r.registry.pending, r.id)
+		}
+	})
+}
+
+type Registration struct {
+	registry   *Registry
+	id         string
+	generation uint64
+	once       sync.Once
+}
+
+func (r *Registration) Close() {
+	if r == nil || r.registry == nil {
+		return
+	}
+	r.once.Do(func() {
+		r.registry.mu.Lock()
+		defer r.registry.mu.Unlock()
+		if current, ok := r.registry.services[r.id]; ok && current.generation == r.generation {
+			delete(r.registry.services, r.id)
+		}
+	})
+}
+
+func (r *Registry) idTakenLocked(id string) bool {
+	if _, ok := r.services[id]; ok {
+		return true
+	}
+	_, ok := r.pending[id]
+	return ok
+}
+
+func aliasIDBase(alias string) string {
+	alias = strings.TrimSpace(strings.ToLower(alias))
+	var b strings.Builder
+	b.Grow(len(alias))
+	separator := false
+	for _, ch := range alias {
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
+			if separator && b.Len() > 0 && b.Len() < protocol.MaxServiceIDLength {
+				b.WriteByte('-')
 			}
-			if _, exists := r.services[id]; !exists && !protocol.IsReservedName(id) {
-				return id, nil
+			separator = false
+			if b.Len() < protocol.MaxServiceIDLength {
+				b.WriteRune(ch)
 			}
+		case ch == '-' || ch == '_':
+			separator = b.Len() > 0
+		default:
+			separator = b.Len() > 0
+		}
+		if b.Len() >= protocol.MaxServiceIDLength {
+			break
 		}
 	}
-
-	if _, exists := r.services[clean]; !exists {
-		return clean, nil
+	base := strings.Trim(b.String(), "-_")
+	if base == "" {
+		return ""
 	}
-
-	// Conflict resolution: append -2, -3, etc. while respecting MaxIDLength
-	for counter := 2; ; counter++ {
-		suffix := fmt.Sprintf("-%d", counter)
-		base := clean
-		if len(base)+len(suffix) > protocol.MaxIDLength {
-			base = base[:protocol.MaxIDLength-len(suffix)]
+	if protocol.IsReservedHandle(base) {
+		prefix := "app-"
+		maxBase := protocol.MaxServiceIDLength - len(prefix)
+		if len(base) > maxBase {
+			base = base[:maxBase]
 		}
-		candidate := base + suffix
-		if _, exists := r.services[candidate]; !exists {
+		base = prefix + base
+	}
+	return base
+}
+
+func (r *Registry) randomIDLocked() (string, error) {
+	for {
+		id, err := protocol.GenerateID()
+		if err != nil {
+			return "", err
+		}
+		if !r.idTakenLocked(id) && !protocol.IsReservedHandle(id) {
+			return id, nil
+		}
+	}
+}
+
+func (r *Registry) allocateIDLocked(alias string) (string, error) {
+	base := aliasIDBase(alias)
+	if base == "" {
+		return r.randomIDLocked()
+	}
+	if !r.idTakenLocked(base) {
+		return base, nil
+	}
+	for n := 2; ; n++ {
+		suffix := fmt.Sprintf("-%d", n)
+		trimmed := base
+		maxBase := protocol.MaxServiceIDLength - len(suffix)
+		if len(trimmed) > maxBase {
+			trimmed = strings.TrimRight(trimmed[:maxBase], "-_")
+		}
+		if trimmed == "" {
+			return r.randomIDLocked()
+		}
+		candidate := trimmed + suffix
+		if !r.idTakenLocked(candidate) {
 			return candidate, nil
 		}
 	}
 }
 
-// Register adds an active agent session to the registry.
-func (r *Registry) Register(info protocol.ServiceInfo, session *yamux.Session, modifyResponse func(*http.Response) error) (*ServiceSession, error) {
+// ReserveID derives a stable ID base from Alias and atomically reserves a
+// unique variant. Duplicate aliases receive -2, -3, ... suffixes. If Alias
+// cannot produce a usable ID, a random server-owned ID is used instead.
+func (r *Registry) ReserveID(alias string) (*Reservation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Create custom transport that dials streams through this yamux session
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return session.Open()
-		},
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+	id, err := r.allocateIDLocked(alias)
+	if err != nil {
+		return nil, err
 	}
-
-	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			req.URL.Scheme = "http"
-			req.URL.Host = "maek"
-
-			// Only allow gzip or uncompressed from upstream so HTML injection works reliably
-			if req.Header.Get("Accept-Encoding") != "" {
-				req.Header.Set("Accept-Encoding", "gzip")
-			}
-		},
-		Transport:      transport,
-		ModifyResponse: modifyResponse,
-		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
-			w.WriteHeader(http.StatusBadGateway)
-			w.Write([]byte("502 Bad Gateway - maek could not reach agent: " + err.Error()))
-		},
-	}
-
-	ss := &ServiceSession{
-		Info:         info,
-		Session:      session,
-		ReverseProxy: proxy,
-	}
-
-	r.services[info.ID] = ss
-	r.byName[info.Name] = info.ID
-	return ss, nil
+	r.generation++
+	generation := r.generation
+	r.pending[id] = generation
+	return &Reservation{registry: r, id: id, generation: generation}, nil
 }
 
-// Unregister removes a service session.
-func (r *Registry) Unregister(id string) {
+func (r *Registry) Activate(reservation *Reservation, info service.Info, proxy *httputil.ReverseProxy) (*ServiceSession, *Registration, error) {
+	if reservation == nil || reservation.registry != r || reservation.id != info.ID {
+		return nil, nil, fmt.Errorf("invalid reservation")
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if ss, ok := r.services[id]; ok {
-		delete(r.services, id)
-		if r.byName[ss.Info.Name] == id {
-			delete(r.byName, ss.Info.Name)
-		}
-		if ss.Session != nil && !ss.Session.IsClosed() {
-			ss.Session.Close()
-		}
+	generation, ok := r.pending[reservation.id]
+	if !ok || generation != reservation.generation {
+		return nil, nil, fmt.Errorf("reservation is no longer active")
 	}
+	if _, exists := r.services[info.ID]; exists {
+		return nil, nil, ErrServiceExists
+	}
+	delete(r.pending, reservation.id)
+
+	entry := &ServiceSession{Info: info, ReverseProxy: proxy, generation: reservation.generation}
+	r.services[info.ID] = entry
+	registration := &Registration{registry: r, id: info.ID, generation: reservation.generation}
+	return entry, registration, nil
 }
 
-// Get retrieves a service by its 6-character ID or by its service Name.
-func (r *Registry) Get(idOrName string) (*ServiceSession, bool) {
+// Get resolves exact IDs first. Alias is intentionally non-unique; the oldest
+// active registration wins and the next-oldest becomes visible when it exits.
+func (r *Registry) Get(idOrAlias string) (*ServiceSession, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// 1. Exact ID match
-	if ss, ok := r.services[idOrName]; ok {
-		return ss, true
+	if entry, ok := r.services[idOrAlias]; ok {
+		return entry, true
 	}
-
-	// 2. Name match
-	if id, ok := r.byName[idOrName]; ok {
-		if ss, ok := r.services[id]; ok {
-			return ss, true
+	var selected *ServiceSession
+	for _, entry := range r.services {
+		if entry.Info.Alias != idOrAlias {
+			continue
+		}
+		if selected == nil || entry.Info.ConnectedAt.Before(selected.Info.ConnectedAt) ||
+			(entry.Info.ConnectedAt.Equal(selected.Info.ConnectedAt) && entry.generation < selected.generation) {
+			selected = entry
 		}
 	}
-
-	return nil, false
+	return selected, selected != nil
 }
 
-// List returns a snapshot of all active services.
-func (r *Registry) List() []protocol.ServiceInfo {
+func (r *Registry) List() []service.Info {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	list := make([]protocol.ServiceInfo, 0, len(r.services))
-	for _, ss := range r.services {
-		list = append(list, ss.Info)
+	list := make([]service.Info, 0, len(r.services))
+	for _, entry := range r.services {
+		list = append(list, entry.Info)
 	}
-	// Oldest registration first, so the dashboard feed is stable across polls.
 	sort.Slice(list, func(i, j int) bool {
+		if list[i].ConnectedAt.Equal(list[j].ConnectedAt) {
+			return list[i].ID < list[j].ID
+		}
 		return list[i].ConnectedAt.Before(list[j].ConnectedAt)
 	})
 	return list

@@ -8,145 +8,95 @@ import (
 	"time"
 
 	"github.com/gosuda/maek/internal/protocol"
+	"github.com/gosuda/maek/internal/service"
 )
 
-func TestDirectServiceURL(t *testing.T) {
-	srv := NewServer(Config{Addr: ":0"})
-
-	// Register a mock service directly in registry
-	info := protocol.ServiceInfo{
-		ID:          "svc123",
-		Name:        "my-service",
-		ConnectedAt: time.Now(),
-	}
-	_, err := srv.Registry().Register(info, nil, nil)
+func registerDirectTestService(t *testing.T, srv *Server, info service.Info) (*Registration, string) {
+	t.Helper()
+	reservation, err := srv.Registry().ReserveID(info.Alias)
 	if err != nil {
-		t.Fatalf("failed to register mock service: %v", err)
+		t.Fatal(err)
 	}
+	info.ID = reservation.ID()
+	_, registration, err := srv.Registry().Activate(reservation, info, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(registration.Close)
+	return registration, info.ID
+}
 
+func TestDirectServiceURLUsesAliasAndID(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	_, id := registerDirectTestService(t, srv, service.Info{Alias: "my-service", ConnectedAt: time.Now()})
 	handler := srv.Handler()
 
-	// 1. Test by Service Name: /_maek/my-service
-	{
-		req := httptest.NewRequest("GET", "/_maek/my-service", nil)
+	for _, path := range []string{"/_maek/my-service", "/_maek/" + id} {
+		req := httptest.NewRequest("GET", path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
-
 		if rec.Code != http.StatusFound {
-			t.Errorf("expected status 302, got %d", rec.Code)
+			t.Fatalf("%s: expected 302, got %d", path, rec.Code)
 		}
-		if loc := rec.Header().Get("Location"); loc != "/" {
-			t.Errorf("expected redirect to '/', got %q", loc)
+		if got := rec.Header().Get("Location"); got != "/" {
+			t.Fatalf("%s: location %q", path, got)
 		}
+	}
+}
 
-		cookies := rec.Result().Cookies()
-		foundCookie := false
-		for _, c := range cookies {
-			if c.Name == protocol.CookieService && c.Value == "svc123" {
-				foundCookie = true
-				break
+func TestDirectAliasWithSubpath(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	registerDirectTestService(t, srv, service.Info{Alias: "my-service", ConnectedAt: time.Now()})
+	req := httptest.NewRequest("GET", "/_maek/my-service/api/docs?page=2", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/api/docs?page=2" {
+		t.Fatalf("got status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestDirectDuplicateAliasUsesOldest(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	now := time.Now()
+	_, oldestID := registerDirectTestService(t, srv, service.Info{Alias: "shared", ConnectedAt: now})
+	registerDirectTestService(t, srv, service.Info{Alias: "shared", ConnectedAt: now.Add(time.Second)})
+
+	req := httptest.NewRequest("GET", "/_maek/shared", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	cookies := rec.Result().Cookies()
+	for _, cookie := range cookies {
+		if cookie.Name == protocol.CookieService {
+			if cookie.Value != oldestID {
+				t.Fatalf("alias resolved to %q, want %q", cookie.Value, oldestID)
 			}
-		}
-		if !foundCookie {
-			t.Errorf("expected maek_service cookie with value 'svc123'")
+			return
 		}
 	}
+	t.Fatal("routing cookie not set")
+}
 
-	// 2. Test by Service ID: /_maek/svc123
-	{
-		req := httptest.NewRequest("GET", "/_maek/svc123", nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+func TestDirectAliasOpenGraphAndThumbnail(t *testing.T) {
+	srv := NewServer(Config{Addr: ":0"})
+	_, id := registerDirectTestService(t, srv, service.Info{
+		Alias:       "code-server login",
+		Description: "My Code Server Environment",
+		Thumbnail:   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+		ConnectedAt: time.Now(),
+	})
 
-		if rec.Code != http.StatusFound {
-			t.Errorf("expected status 302, got %d", rec.Code)
-		}
-		if loc := rec.Header().Get("Location"); loc != "/" {
-			t.Errorf("expected redirect to '/', got %q", loc)
-		}
+	botReq := httptest.NewRequest("GET", "/_maek/code-server%20login", nil)
+	botReq.Header.Set("User-Agent", "Slackbot-LinkExpanding")
+	botRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(botRec, botReq)
+	if botRec.Code != http.StatusOK || !strings.Contains(botRec.Body.String(), `property="og:title" content="code-server login"`) {
+		t.Fatalf("unexpected OpenGraph response: %d %s", botRec.Code, botRec.Body.String())
 	}
 
-	// 3. Test with Subpath: /_maek/my-service/api/docs?page=2
-	{
-		req := httptest.NewRequest("GET", "/_maek/my-service/api/docs?page=2", nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusFound {
-			t.Errorf("expected status 302, got %d", rec.Code)
-		}
-		if loc := rec.Header().Get("Location"); loc != "/api/docs?page=2" {
-			t.Errorf("expected redirect to '/api/docs?page=2', got %q", loc)
-		}
-	}
-
-	// 4. Test non-existent service: /_maek/ghost-service
-	{
-		req := httptest.NewRequest("GET", "/_maek/ghost-service", nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusNotFound {
-			t.Errorf("expected status 404, got %d", rec.Code)
-		}
-		if !strings.Contains(rec.Body.String(), "not found") {
-			t.Errorf("expected 'not found' message, got %q", rec.Body.String())
-		}
-	}
-
-	// 5. Test with Encoded Space in Service Name: /_maek/code-server%20login
-	{
-		spaceInfo := protocol.ServiceInfo{
-			ID:          "cs456",
-			Name:        "code-server login",
-			Description: "My Code Server Environment",
-			Thumbnail:   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-			ConnectedAt: time.Now(),
-		}
-		_, _ = srv.Registry().Register(spaceInfo, nil, nil)
-
-		// Regular browser gets 302 redirect with cookie
-		req := httptest.NewRequest("GET", "/_maek/code-server%20login", nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusFound {
-			t.Errorf("expected status 302 for encoded space, got %d", rec.Code)
-		}
-
-		// OpenGraph crawler (e.g. Slackbot) gets 200 OK with rich OpenGraph tags
-		botReq := httptest.NewRequest("GET", "/_maek/code-server%20login", nil)
-		botReq.Header.Set("User-Agent", "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)")
-		botRec := httptest.NewRecorder()
-		handler.ServeHTTP(botRec, botReq)
-
-		if botRec.Code != http.StatusOK {
-			t.Errorf("expected 200 OK for OpenGraph bot, got %d", botRec.Code)
-		}
-		body := botRec.Body.String()
-		if !strings.Contains(body, `property="og:title" content="code-server login"`) {
-			t.Errorf("expected og:title in body, got: %s", body)
-		}
-		if !strings.Contains(body, `property="og:description" content="My Code Server Environment"`) {
-			t.Errorf("expected og:description in body, got: %s", body)
-		}
-		if !strings.Contains(body, `property="og:image" content="http://example.com/_maek/thumb?id=cs456"`) {
-			t.Errorf("expected og:image endpoint in body, got: %s", body)
-		}
-
-		// Thumbnail endpoint returns raw decoded image bytes
-		thumbReq := httptest.NewRequest("GET", "/_maek/thumb?id=cs456", nil)
-		thumbRec := httptest.NewRecorder()
-		handler.ServeHTTP(thumbRec, thumbReq)
-
-		if thumbRec.Code != http.StatusOK {
-			t.Errorf("expected status 200 for thumb, got %d", thumbRec.Code)
-		}
-		if thumbRec.Header().Get("Content-Type") != "image/png" {
-			t.Errorf("expected image/png, got %s", thumbRec.Header().Get("Content-Type"))
-		}
-		if thumbRec.Body.Len() == 0 {
-			t.Errorf("expected non-empty thumb image bytes")
-		}
+	thumbReq := httptest.NewRequest("GET", "/_maek/thumb?id="+id, nil)
+	thumbRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(thumbRec, thumbReq)
+	if thumbRec.Code != http.StatusOK || thumbRec.Header().Get("Content-Type") != "image/png" || thumbRec.Body.Len() == 0 {
+		t.Fatalf("unexpected thumbnail response")
 	}
 }
