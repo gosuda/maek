@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http/httputil"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/gosuda/maek/internal/protocol"
@@ -89,7 +90,46 @@ func (r *Registry) idTakenLocked(id string) bool {
 	return ok
 }
 
-func (r *Registry) allocateIDLocked() (string, error) {
+func aliasIDBase(alias string) string {
+	alias = strings.TrimSpace(strings.ToLower(alias))
+	var b strings.Builder
+	b.Grow(len(alias))
+	separator := false
+	for _, ch := range alias {
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
+			if separator && b.Len() > 0 && b.Len() < protocol.MaxServiceIDLength {
+				b.WriteByte('-')
+			}
+			separator = false
+			if b.Len() < protocol.MaxServiceIDLength {
+				b.WriteRune(ch)
+			}
+		case ch == '-' || ch == '_':
+			separator = b.Len() > 0
+		default:
+			separator = b.Len() > 0
+		}
+		if b.Len() >= protocol.MaxServiceIDLength {
+			break
+		}
+	}
+	base := strings.Trim(b.String(), "-_")
+	if base == "" {
+		return ""
+	}
+	if protocol.IsReservedHandle(base) {
+		prefix := "app-"
+		maxBase := protocol.MaxServiceIDLength - len(prefix)
+		if len(base) > maxBase {
+			base = base[:maxBase]
+		}
+		base = prefix + base
+	}
+	return base
+}
+
+func (r *Registry) randomIDLocked() (string, error) {
 	for {
 		id, err := protocol.GenerateID()
 		if err != nil {
@@ -101,12 +141,39 @@ func (r *Registry) allocateIDLocked() (string, error) {
 	}
 }
 
-// ReserveID allocates an opaque server-owned ID and holds it until Activate or Release.
-func (r *Registry) ReserveID() (*Reservation, error) {
+func (r *Registry) allocateIDLocked(alias string) (string, error) {
+	base := aliasIDBase(alias)
+	if base == "" {
+		return r.randomIDLocked()
+	}
+	if !r.idTakenLocked(base) {
+		return base, nil
+	}
+	for n := 2; ; n++ {
+		suffix := fmt.Sprintf("-%d", n)
+		trimmed := base
+		maxBase := protocol.MaxServiceIDLength - len(suffix)
+		if len(trimmed) > maxBase {
+			trimmed = strings.TrimRight(trimmed[:maxBase], "-_")
+		}
+		if trimmed == "" {
+			return r.randomIDLocked()
+		}
+		candidate := trimmed + suffix
+		if !r.idTakenLocked(candidate) {
+			return candidate, nil
+		}
+	}
+}
+
+// ReserveID derives a stable ID base from Alias and atomically reserves a
+// unique variant. Duplicate aliases receive -2, -3, ... suffixes. If Alias
+// cannot produce a usable ID, a random server-owned ID is used instead.
+func (r *Registry) ReserveID(alias string) (*Reservation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id, err := r.allocateIDLocked()
+	id, err := r.allocateIDLocked(alias)
 	if err != nil {
 		return nil, err
 	}

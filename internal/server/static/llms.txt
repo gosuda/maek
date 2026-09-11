@@ -26,20 +26,22 @@ This server's base URL: __SERVER_URL__
 3. Verify registration - poll until your service appears:
 
    curl __SERVER_URL__/_maek/api/services
-   -> [{"id":"ab12cd","alias":"my-app","connected_at":"..."}]
+   -> [{"id":"my-app","alias":"my-app","connected_at":"..."}]
 
 4. Your app is now public:
 
-   - Stable browser URL: __SERVER_URL__/_maek/ab12cd
-   - Header routing (curl/API): curl -H "X-Maek-Service: ab12cd" __SERVER_URL__/
+   - Stable browser URL: __SERVER_URL__/_maek/my-app
+   - Header routing (curl/API): curl -H "X-Maek-Service: my-app" __SERVER_URL__/
    - Alias routing is also available at __SERVER_URL__/_maek/my-app
 
 ## Alias semantics
 
-- IDs are opaque and assigned by the server.
+- IDs are assigned by the server from the Alias.
+- The first active `my-app` gets ID `my-app`; duplicates get `my-app-2`, `my-app-3`, and so on.
 - IDs are globally unique while active and are the canonical share target.
 - Aliases may be shared by multiple active services.
 - Alias routing selects the oldest active service; when it disconnects, the next-oldest service becomes active for that alias.
+- If an Alias cannot produce a safe ID, the server falls back to a random ID.
 
 ## Protocol
 

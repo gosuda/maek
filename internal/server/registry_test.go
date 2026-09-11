@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 
 func activateTestService(t *testing.T, r *Registry, alias string, connectedAt time.Time) (*Registration, string) {
 	t.Helper()
-	reservation, err := r.ReserveID()
+	reservation, err := r.ReserveID(alias)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,15 +24,44 @@ func activateTestService(t *testing.T, r *Registry, alias string, connectedAt ti
 	return registration, id
 }
 
-func TestRegistryReservationGeneratesOpaqueID(t *testing.T) {
+func TestRegistryReservationUsesAliasAsIDBase(t *testing.T) {
 	r := NewRegistry()
-	reservation, err := r.ReserveID()
+	first, err := r.ReserveID("Test App")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	second, err := r.ReserveID("Test App")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Release()
+	if first.ID() != "test-app" || second.ID() != "test-app-2" {
+		t.Fatalf("got %q, %q", first.ID(), second.ID())
+	}
+}
+
+func TestRegistryReservationFallsBackToRandomID(t *testing.T) {
+	r := NewRegistry()
+	reservation, err := r.ReserveID("한글")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reservation.Release()
 	if len(reservation.ID()) != protocol.IDLength {
-		t.Fatalf("got ID %q with length %d", reservation.ID(), len(reservation.ID()))
+		t.Fatalf("got fallback ID %q with length %d", reservation.ID(), len(reservation.ID()))
+	}
+}
+
+func TestRegistryReservationAvoidsReservedHandle(t *testing.T) {
+	r := NewRegistry()
+	reservation, err := r.ReserveID("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reservation.Release()
+	if reservation.ID() != "app-api" {
+		t.Fatalf("got reserved-derived ID %q", reservation.ID())
 	}
 }
 
@@ -44,7 +74,7 @@ func TestRegistryConcurrentReservationsAreUnique(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			reservation, err := r.ReserveID()
+			reservation, err := r.ReserveID("demo")
 			if err != nil {
 				t.Errorf("reserve %d: %v", i, err)
 				return
@@ -58,6 +88,9 @@ func TestRegistryConcurrentReservationsAreUnique(t *testing.T) {
 	for _, reservation := range reservations {
 		if reservation == nil {
 			continue
+		}
+		if !strings.HasPrefix(reservation.ID(), "demo") {
+			t.Fatalf("unexpected alias-derived ID %q", reservation.ID())
 		}
 		if _, exists := seen[reservation.ID()]; exists {
 			t.Fatalf("duplicate reservation %q", reservation.ID())
@@ -77,6 +110,9 @@ func TestRegistryAliasOldestActiveWins(t *testing.T) {
 	newer, newerID := activateTestService(t, r, "shared", now.Add(time.Second))
 	defer newer.Close()
 
+	if oldestID != "shared" || newerID != "shared-2" {
+		t.Fatalf("got IDs %q, %q", oldestID, newerID)
+	}
 	got, ok := r.Get("shared")
 	if !ok || got.Info.ID != oldestID {
 		t.Fatalf("got %+v, %v; want %s", got, ok, oldestID)

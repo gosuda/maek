@@ -85,17 +85,14 @@ func TestE2E_MultiServiceSessionAndAliasRouting(t *testing.T) {
 
 	waitForServices(t, srv, 2)
 	services := srv.Registry().List()
-	if services[0].ID == services[1].ID || services[0].ID == "" || services[1].ID == "" {
-		t.Fatalf("invalid server-assigned IDs: %+v", services)
-	}
-	if got := routedGET(t, master.URL, services[0].ID); got != "target-a" {
-		t.Fatalf("first ID routed to %q", got)
-	}
-	if got := routedGET(t, master.URL, services[1].ID); got != "target-b" {
-		t.Fatalf("second ID routed to %q", got)
+	if services[0].ID != "shared" || services[1].ID != "shared-2" {
+		t.Fatalf("unexpected alias-derived IDs: %+v", services)
 	}
 	if got := routedGET(t, master.URL, "shared"); got != "target-a" {
-		t.Fatalf("shared alias routed to %q, want oldest target-a", got)
+		t.Fatalf("shared routed to %q", got)
+	}
+	if got := routedGET(t, master.URL, "shared-2"); got != "target-b" {
+		t.Fatalf("shared-2 routed to %q", got)
 	}
 
 	cancel()

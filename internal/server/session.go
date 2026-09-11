@@ -65,7 +65,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		if alias == "" {
 			alias = "app"
 		}
-		reservation, err := s.registry.ReserveID()
+		reservation, err := s.registry.ReserveID(alias)
 		if err != nil {
 			for _, item := range pending {
 				item.reservation.Release()

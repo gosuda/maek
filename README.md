@@ -51,7 +51,7 @@ Run one tiny binary on a VPS and expose multiple private services without accoun
 
 * **3-Way Routing Engine**: session cookies for browsers, direct service URLs (`/_maek/:id`), and `X-Maek-Service` headers for APIs.
 * **Aliases are intentionally non-unique**: the oldest active service owning an alias receives alias-based traffic; when it disconnects the next-oldest active service takes over.
-* **IDs are opaque, server-assigned, and unique while active**, making ID URLs the canonical deterministic share target.
+* **IDs are server-assigned from the Alias**: `test` becomes `test`, then `test-2`, `test-3`, etc. while those IDs are active.
 * **Smart Messenger Previews** and an injected floating widget remain available for proxied HTML services.
 
 ### Versioned Wire Protocol
@@ -68,7 +68,7 @@ Protocol v1 includes:
 
 ### Concurrency-safe Service Lifecycle
 
-The server reserves generated IDs before registration commits. Registry cleanup is generation-scoped, so a stale connection cannot delete a newer service if an ID is ever reused after a collision or reconnect lifecycle.
+The server atomically reserves Alias-derived IDs before registration commits. Registry cleanup is generation-scoped, so a stale connection cannot delete a newer service that later owns the same ID.
 
 ---
 
@@ -138,17 +138,17 @@ maek agent -s ws://<VPS-IP>:8080 -t http://localhost:3000
 maek agent -s ws://<VPS-IP>:8080 -a dev-app -t http://localhost:3000
 ```
 
-The server assigns the service ID after registration.
+The server derives the service ID from the Alias. For example, `dev-app` gets ID `dev-app`; another active service with the same Alias gets `dev-app-2`.
 
 ### 4. Access & Share
 
 * **Web Catalog**: `http://<VPS-IP>:8080/`
-* **Canonical ID URL**: `http://<VPS-IP>:8080/_maek/ab12cd`
+* **Canonical ID URL**: `http://<VPS-IP>:8080/_maek/dev-app`
 * **Alias route**: `http://<VPS-IP>:8080/_maek/dev-app` (oldest active service wins if duplicated)
 * **ID header routing**:
 
 ```bash
-curl -H "X-Maek-Service: ab12cd" http://<VPS-IP>:8080/api/health
+curl -H "X-Maek-Service: dev-app" http://<VPS-IP>:8080/api/health
 ```
 
 ---
@@ -189,7 +189,7 @@ The Go Agent API supports multiple `ServiceConfig` entries in one connection eve
 | `/_maek` | `GET` | Clears active routing cookie and returns to catalog |
 | `/_maek/<id\|alias>` | `GET` | Direct route; dashboard-generated links use ID, duplicate aliases resolve oldest-active-first |
 | `/_maek/ws` | `GET` | Version-negotiated Agent WebSocket endpoint |
-| `/_maek/api/services` | `GET` | Active service metadata including server-assigned `id` and `alias` |
+| `/_maek/api/services` | `GET` | Active service metadata including `id` and `alias` |
 | `/_maek/thumb` | `GET` | Thumbnail endpoint |
 | `/_maek/install.sh` | `GET` | macOS / Linux installer |
 | `/_maek/install.ps1`| `GET` | Windows installer |

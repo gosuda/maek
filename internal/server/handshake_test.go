@@ -51,8 +51,8 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 	if env.Type != protocol.MsgRegistered || len(registered.Services) != 2 {
 		t.Fatalf("unexpected response: %+v", registered)
 	}
-	if registered.Services[0].ID == "" || registered.Services[1].ID == "" || registered.Services[0].ID == registered.Services[1].ID {
-		t.Fatalf("server did not assign distinct IDs: %+v", registered.Services)
+	if registered.Services[0].ID != "shared" || registered.Services[1].ID != "shared-2" {
+		t.Fatalf("unexpected alias-derived IDs: %+v", registered.Services)
 	}
 	if err := tunnel.WriteControl(ctx, conn, protocol.MsgStartV1, struct{}{}); err != nil {
 		t.Fatal(err)

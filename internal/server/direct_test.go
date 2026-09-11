@@ -13,7 +13,7 @@ import (
 
 func registerDirectTestService(t *testing.T, srv *Server, info service.Info) (*Registration, string) {
 	t.Helper()
-	reservation, err := srv.Registry().ReserveID()
+	reservation, err := srv.Registry().ReserveID(info.Alias)
 	if err != nil {
 		t.Fatal(err)
 	}
