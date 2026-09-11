@@ -4,20 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 )
 
 type Version uint16
 
-const Version1 Version = 1
+const Version2 Version = 2
 
 func (v Version) Subprotocol() string {
 	return fmt.Sprintf("maek.v%d", v)
 }
 
 func SupportedVersions() []Version {
-	return []Version{Version1}
+	return []Version{Version2}
 }
 
 func SupportedSubprotocols() []string {
@@ -37,82 +36,11 @@ func ParseSubprotocol(s string) (Version, bool) {
 	return Version(n), true
 }
 
-type ContentEncoding string
-
 const (
-	EncodingIdentity ContentEncoding = "identity"
-	EncodingGzip     ContentEncoding = "gzip"
-)
-
-func SupportedEncodings() []ContentEncoding {
-	return []ContentEncoding{EncodingIdentity, EncodingGzip}
-}
-
-type Capability string
-
-const (
-	CapabilityMultiService   Capability = "multi-service"
-	CapabilityStreamEncoding Capability = "stream-encoding"
-)
-
-func SupportedCapabilities() []Capability {
-	return []Capability{CapabilityMultiService, CapabilityStreamEncoding}
-}
-
-type SessionConfig struct {
-	Version      Version
-	Encoding     ContentEncoding
-	Capabilities []Capability
-}
-
-func NegotiateEncoding(peer, local []ContentEncoding) (ContentEncoding, bool) {
-	peerSet := make(map[ContentEncoding]struct{}, len(peer))
-	for _, v := range peer {
-		peerSet[v] = struct{}{}
-	}
-	for _, v := range local {
-		if _, ok := peerSet[v]; ok {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-func IntersectCapabilities(a, b []Capability) []Capability {
-	set := make(map[Capability]struct{}, len(b))
-	for _, v := range b {
-		set[v] = struct{}{}
-	}
-	out := make([]Capability, 0)
-	for _, v := range a {
-		if _, ok := set[v]; ok {
-			out = append(out, v)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
-}
-
-const (
-	MsgHello      = "hello"
-	MsgWelcome    = "welcome"
-	MsgRegisterV1 = "register"
+	MsgRegister   = "register"
 	MsgRegistered = "registered"
-	MsgStartV1    = "start"
-	MsgErrorV1    = "error"
+	MsgError      = "error"
 )
-
-type Hello struct {
-	SoftwareVersion string            `json:"software_version,omitempty"`
-	Encodings       []ContentEncoding `json:"encodings"`
-	Capabilities    []Capability      `json:"capabilities,omitempty"`
-}
-
-type Welcome struct {
-	SoftwareVersion string          `json:"software_version,omitempty"`
-	Encoding        ContentEncoding `json:"encoding"`
-	Capabilities    []Capability    `json:"capabilities,omitempty"`
-}
 
 type ServiceSpec struct {
 	Alias       string `json:"alias,omitempty"`
@@ -121,7 +49,8 @@ type ServiceSpec struct {
 }
 
 type RegisterServices struct {
-	Services []ServiceSpec `json:"services"`
+	SoftwareVersion string        `json:"software_version,omitempty"`
+	Services        []ServiceSpec `json:"services"`
 }
 
 type AssignedService struct {
@@ -131,7 +60,8 @@ type AssignedService struct {
 }
 
 type RegisteredServices struct {
-	Services []AssignedService `json:"services"`
+	SoftwareVersion string            `json:"software_version,omitempty"`
+	Services        []AssignedService `json:"services"`
 }
 
 type ProtocolError struct {

@@ -4,7 +4,6 @@ go 1.27.1
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/hashicorp/yamux v0.1.2
 	golang.org/x/net v0.59.0
 )
 

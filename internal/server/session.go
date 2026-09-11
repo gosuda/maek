@@ -29,18 +29,17 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	fail := func(code, message string) {
-		_ = tunnel.WriteControl(context.Background(), wsConn, protocol.MsgErrorV1, protocol.ProtocolError{Code: code, Message: message})
+		_ = tunnel.WriteControl(context.Background(), wsConn, protocol.MsgError, protocol.ProtocolError{Code: code, Message: message})
 		_ = wsConn.Close(websocket.StatusPolicyViolation, code)
 	}
 
-	config, err := tunnel.ServerNegotiate(hsCtx, wsConn, version.Version)
-	if err != nil {
-		fail("negotiation-failed", err.Error())
+	if err := tunnel.ValidateSubprotocol(wsConn); err != nil {
+		fail("unsupported-protocol", err.Error())
 		return
 	}
 
 	env, err := tunnel.ReadControl(hsCtx, wsConn)
-	if err != nil || env.Type != protocol.MsgRegisterV1 {
+	if err != nil || env.Type != protocol.MsgRegister {
 		fail("invalid-register", "expected a register message")
 		return
 	}
@@ -93,17 +92,14 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	for _, item := range pending {
 		assigned = append(assigned, item.assigned)
 	}
-	if err := tunnel.WriteControl(hsCtx, wsConn, protocol.MsgRegistered, protocol.RegisteredServices{Services: assigned}); err != nil {
-		return
-	}
-	env, err = tunnel.ReadControl(hsCtx, wsConn)
-	if err != nil || env.Type != protocol.MsgStartV1 {
-		fail("expected-start", "expected a start message")
+	if err := tunnel.WriteControl(hsCtx, wsConn, protocol.MsgRegistered, protocol.RegisteredServices{
+		SoftwareVersion: version.Version,
+		Services:        assigned,
+	}); err != nil {
 		return
 	}
 
-	netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
-	tunnelSession, err := tunnel.NewServer(netConn, config)
+	tunnelSession, err := tunnel.NewServer(wsConn)
 	if err != nil {
 		log.Printf("[maek-server] failed to create tunnel session: %v", err)
 		return

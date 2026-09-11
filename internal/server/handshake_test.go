@@ -11,7 +11,7 @@ import (
 	"github.com/gosuda/maek/internal/tunnel"
 )
 
-func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
+func TestAgentWebSocketV2MultiServiceHandshake(t *testing.T) {
 	srv := NewServer(Config{Addr: ":0"})
 	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
@@ -24,20 +24,18 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.CloseNow()
-
-	config, err := tunnel.ClientNegotiate(ctx, conn, "test")
-	if err != nil {
+	if err := tunnel.ValidateSubprotocol(conn); err != nil {
 		t.Fatal(err)
 	}
-	if config.Version != protocol.Version1 {
-		t.Fatalf("got version %d", config.Version)
-	}
 
-	request := protocol.RegisterServices{Services: []protocol.ServiceSpec{
-		{Alias: "shared"},
-		{Alias: "shared"},
-	}}
-	if err := tunnel.WriteControl(ctx, conn, protocol.MsgRegisterV1, request); err != nil {
+	request := protocol.RegisterServices{
+		SoftwareVersion: "test",
+		Services: []protocol.ServiceSpec{
+			{Alias: "shared"},
+			{Alias: "shared"},
+		},
+	}
+	if err := tunnel.WriteControl(ctx, conn, protocol.MsgRegister, request); err != nil {
 		t.Fatal(err)
 	}
 	env, err := tunnel.ReadControl(ctx, conn)
@@ -54,12 +52,8 @@ func TestAgentWebSocketV1MultiServiceHandshake(t *testing.T) {
 	if registered.Services[0].ID != "shared" || registered.Services[1].ID != "shared-2" {
 		t.Fatalf("unexpected alias-derived IDs: %+v", registered.Services)
 	}
-	if err := tunnel.WriteControl(ctx, conn, protocol.MsgStartV1, struct{}{}); err != nil {
-		t.Fatal(err)
-	}
 
-	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
-	tunnelSession, err := tunnel.NewClient(netConn, config)
+	tunnelSession, err := tunnel.NewClient(conn)
 	if err != nil {
 		t.Fatal(err)
 	}
