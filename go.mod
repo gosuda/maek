@@ -4,7 +4,6 @@ go 1.27.1
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/hashicorp/yamux v0.1.2
 	golang.org/x/net v0.59.0
 )
 
@@ -104,7 +103,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
-	github.com/chrismellard/docker-credential-acr-env v0.0.0-20230304212654-82a0ddb27589 // indirect
+	github.com/chrismellard/docker-credential-acr-env v0.0.0-20230304212653-82a0ddb27589 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
