@@ -8,8 +8,6 @@
 </head>
 <body>
   <div class="page">
-
-  <!-- Header Card: Pure typographic branding, no icon -->
   <div class="container">
     <header class="header">
       <div class="brand-text">
@@ -19,75 +17,43 @@
         </div>
         <p>Instant HTTP tunnels to private networks</p>
       </div>
-      <div class="live-status">
-        <span class="pulse-dot"></span>
-        <span id="active-badge">Active</span>
-      </div>
+      <div class="live-status"><span class="pulse-dot"></span><span id="active-badge">Active</span></div>
     </header>
   </div>
 
-  <!-- Card: Connected Tunnels -->
   <div class="container">
-    <div class="section-header">
-      <span class="section-title">Connected Tunnels</span>
-      <span class="service-count" id="count-label">0 online</span>
-    </div>
-
-    <!-- Feed -->
-    <div id="feed" class="feed">
-      <!-- Dynamically filled -->
-    </div>
+    <div class="section-header"><span class="section-title">Connected Tunnels</span><span class="service-count" id="count-label">0 online</span></div>
+    <div id="feed" class="feed"></div>
   </div>
 
-  <!-- Card: Quick Start (Install & Connect) -->
   <div class="container">
-    <div class="section-header">
-      <span class="section-title">Quick Start</span>
-      <span class="service-count">maek CLI &middot; 2 steps</span>
-    </div>
-
+    <div class="section-header"><span class="section-title">Quick Start</span><span class="service-count">maek CLI &middot; 2 steps</span></div>
     <section class="guide-section">
-      <!-- Step 1: Install maek CLI -->
       <div class="step-block">
-        <div class="step-header">
-          <span class="step-num">1</span>
-          <span class="step-title">Install maek CLI</span>
-        </div>
+        <div class="step-header"><span class="step-num">1</span><span class="step-title">Install maek CLI</span></div>
         <div class="step-desc">Run this command in your terminal to install the agent:</div>
-
-        <!-- OS Tabs -->
         <div class="os-tabs">
           <button class="os-tab" id="tab-macos" onclick="selectOSTab('macos')">macOS</button>
           <button class="os-tab" id="tab-linux" onclick="selectOSTab('linux')">Linux</button>
           <button class="os-tab" id="tab-windows" onclick="selectOSTab('windows')">Windows</button>
           <button class="os-tab" id="tab-go" onclick="selectOSTab('go')">Go</button>
         </div>
-
-        <!-- Install Command Box -->
         <div class="step-body">
-          <div class="cmd-wrapper">
-            <pre class="cmd-box" id="install-cmd-output" style="padding-right: 80px;"></pre>
-            <button class="cmd-copy-btn" id="install-copy-btn" onclick="copyInstallCmd()">Copy</button>
-          </div>
+          <div class="cmd-wrapper"><pre class="cmd-box" id="install-cmd-output" style="padding-right: 80px;"></pre><button class="cmd-copy-btn" id="install-copy-btn" onclick="copyInstallCmd()">Copy</button></div>
           <div class="install-links" id="install-direct-links"></div>
         </div>
       </div>
 
       <div class="install-divider"></div>
 
-      <!-- Step 2: Connect a service -->
       <div class="step-block">
-        <div class="step-header">
-          <span class="step-num">2</span>
-          <span class="step-title">Connect your service</span>
-        </div>
+        <div class="step-header"><span class="step-num">2</span><span class="step-title">Connect your service</span></div>
         <div class="step-desc">Configure your parameters below and run the agent:</div>
-
         <div class="step-body">
           <div class="input-grid">
             <div class="input-group">
-              <label class="input-label" for="param-name">Service Name (optional)</label>
-              <input class="input-field" id="param-name" type="text" placeholder="Auto-detected from target" oninput="updateCommand()" />
+              <label class="input-label" for="param-alias">Service Alias (optional)</label>
+              <input class="input-field" id="param-alias" type="text" placeholder="Auto-detected from target" oninput="updateCommand()" />
             </div>
             <div class="input-group">
               <label class="input-label" for="param-target">Target URL</label>
@@ -102,48 +68,26 @@
               <input class="input-field" id="param-desc" type="text" placeholder="e.g. Local dev server" oninput="updateCommand()" />
             </div>
           </div>
-
-          <div class="cmd-wrapper">
-            <pre class="cmd-box" id="cmd-output"></pre>
-            <button class="cmd-copy-btn" id="cmd-copy-btn" onclick="copyAgentCmd()">Copy</button>
-          </div>
+          <div class="cmd-wrapper"><pre class="cmd-box" id="cmd-output"></pre><button class="cmd-copy-btn" id="cmd-copy-btn" onclick="copyAgentCmd()">Copy</button></div>
         </div>
       </div>
     </section>
   </div>
 
-  <!-- Card: For AI Agents -->
   <div class="container">
-    <div class="section-header">
-      <span class="section-title">For AI Agents</span>
-      <span class="service-count">llms.txt &middot; machine-readable</span>
-    </div>
-
+    <div class="section-header"><span class="section-title">For AI Agents</span><span class="service-count">llms.txt &middot; machine-readable</span></div>
     <section class="guide-section">
-      <p class="card-desc">
-        Coding agents can create tunnels on this server autonomously &mdash; feed them this guide:
-      </p>
-      <div class="cmd-wrapper">
-        <pre class="cmd-box" id="llms-cmd-output" style="padding-right: 80px;"></pre>
-        <button class="cmd-copy-btn" id="llms-copy-btn" onclick="copyLLMsCmd()">Copy</button>
-      </div>
-      <div class="install-links">
-        <a href="/_maek/llms.txt" target="_blank" rel="noopener">View /_maek/llms.txt &rarr;</a>
-        <span>&middot;</span>
-        <span>Follows the <a href="https://llmstxt.org" target="_blank" rel="noopener">llms.txt</a> convention</span>
-      </div>
+      <p class="card-desc">Coding agents can create tunnels on this server autonomously &mdash; feed them this guide:</p>
+      <div class="cmd-wrapper"><pre class="cmd-box" id="llms-cmd-output" style="padding-right: 80px;"></pre><button class="cmd-copy-btn" id="llms-copy-btn" onclick="copyLLMsCmd()">Copy</button></div>
+      <div class="install-links"><a href="/_maek/llms.txt" target="_blank" rel="noopener">View /_maek/llms.txt &rarr;</a><span>&middot;</span><span>Follows the <a href="https://llmstxt.org" target="_blank" rel="noopener">llms.txt</a> convention</span></div>
     </section>
   </div>
 
-  <!-- Footer -->
   <footer class="footer">
     <a href="/_maek/version" id="footer-version" class="footer-link">maek</a>
-    <div class="footer-repo">
-      Developed in the open at <a href="https://github.com/gosuda/maek" target="_blank" rel="noopener" class="footer-link">github.com/gosuda/maek &rarr;</a>
-    </div>
+    <div class="footer-repo">Developed in the open at <a href="https://github.com/gosuda/maek" target="_blank" rel="noopener" class="footer-link">github.com/gosuda/maek &rarr;</a></div>
   </footer>
   </div>
-
   <script src="/_maek/app.js"></script>
 </body>
 </html>

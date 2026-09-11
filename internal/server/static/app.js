@@ -4,9 +4,7 @@
 
     function pickColor(str) {
       let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      }
+      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
       return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
     }
 
@@ -30,7 +28,6 @@
       })[m]);
     }
 
-    // OS Detection & Installer Tab Handler
     let currentOS = 'macos';
 
     function detectOS() {
@@ -61,87 +58,49 @@
       } else if (os === 'windows') {
         cmdBox.textContent = `irm ${origin}/_maek/install.ps1 | iex`;
         linksBox.innerHTML = `Direct download: <a href="${origin}/_maek/download?os=Windows&arch=x86_64">Windows x86_64 (.zip)</a>`;
-      } else if (os === 'go') {
+      } else {
         cmdBox.textContent = `go install github.com/gosuda/maek/cmd/maek@latest`;
         linksBox.innerHTML = `Requires Go 1.22+ · <a href="https://github.com/gosuda/maek/releases" target="_blank" rel="noopener">GitHub Releases &rarr;</a>`;
       }
-
       updateCommand();
     }
 
-    function copyInstallCmd() {
-      const text = document.getElementById('install-cmd-output').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('install-copy-btn');
+    function copyText(id, buttonId) {
+      navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => {
+        const btn = document.getElementById(buttonId);
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
       });
     }
 
-    // Interactive Command Builder
+    function copyInstallCmd() { copyText('install-cmd-output', 'install-copy-btn'); }
+    function copyAgentCmd() { copyText('cmd-output', 'cmd-copy-btn'); }
+    function copyLLMsCmd() { copyText('llms-cmd-output', 'llms-copy-btn'); }
 
-    // POSIX sh/bash (macOS, Linux): escape ' as '\''
-    function shellQuotePosix(s) {
-      return "'" + s.replace(/'/g, "'\\''") + "'";
-    }
-
-    // PowerShell: escape ' as '' (doubling), wrap in single quotes
-    function shellQuotePs(s) {
-      return "'" + s.replace(/'/g, "''") + "'";
-    }
+    function shellQuotePosix(s) { return "'" + s.replace(/'/g, "'\\''") + "'"; }
+    function shellQuotePs(s) { return "'" + s.replace(/'/g, "''") + "'"; }
 
     function updateCommand() {
       const host = window.location.host || '127.0.0.1:8080';
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const name = document.getElementById('param-name').value.trim();
+      const alias = document.getElementById('param-alias').value.trim();
       const target = document.getElementById('param-target').value.trim() || 'http://localhost:3000';
       const id = document.getElementById('param-id').value.trim();
       const desc = document.getElementById('param-desc').value.trim();
-
       const effectiveOS = currentOS === 'go' ? detectOS() : currentOS;
       const isPowerShell = effectiveOS === 'windows';
       const q = isPowerShell ? shellQuotePs : shellQuotePosix;
       const cont = isPowerShell ? '`' : '\\';
-
-      let lines = [
-        `maek agent ${cont}`,
-        `  --server ${wsProto}//${host} ${cont}`
-      ];
-
-      if (name) {
-        lines.push(`  --name ${q(name)} ${cont}`);
-      }
-      if (id) {
-        lines.push(`  --id ${q(id)} ${cont}`);
-      }
-      if (desc) {
-        lines.push(`  --desc ${q(desc)} ${cont}`);
-      }
+      const lines = [`maek agent ${cont}`, `  --server ${wsProto}//${host} ${cont}`];
+      if (alias) lines.push(`  --alias ${q(alias)} ${cont}`);
+      if (id) lines.push(`  --id ${q(id)} ${cont}`);
+      if (desc) lines.push(`  --desc ${q(desc)} ${cont}`);
       lines.push(`  --target ${q(target)}`);
-
       document.getElementById('cmd-output').textContent = lines.join('\n');
-    }
-
-    function copyAgentCmd() {
-      const text = document.getElementById('cmd-output').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('cmd-copy-btn');
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
-      });
     }
 
     function updateLLMsCmd() {
       document.getElementById('llms-cmd-output').textContent = `curl ${window.location.origin}/_maek/llms.txt`;
-    }
-
-    function copyLLMsCmd() {
-      const text = document.getElementById('llms-cmd-output').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('llms-copy-btn');
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
-      });
     }
 
     function copySnippet(btn, text) {
@@ -152,9 +111,7 @@
       });
     }
 
-    // Per-service URL/cURL snippet tab state (survives periodic re-renders)
     const snippetTabs = {};
-
     function setSnippetTab(serviceId, tab) {
       snippetTabs[serviceId] = tab;
       const isUrl = tab === 'url';
@@ -172,8 +129,7 @@
       try {
         const res = await fetch('/_maek/api/services');
         if (!res.ok) return;
-        const services = await res.json();
-        renderServices(services);
+        renderServices(await res.json());
       } catch (e) {
         console.error('Failed to fetch services:', e);
       }
@@ -183,83 +139,48 @@
       const feed = document.getElementById('feed');
       const countLabel = document.getElementById('count-label');
       const host = window.location.host;
-
       const count = services ? services.length : 0;
       countLabel.textContent = count === 1 ? '1 tunnel online' : `${count} tunnels online`;
-
       if (!services || services.length === 0) {
-        feed.innerHTML = `
-          <div class="empty-feed">
-            No active tunnels connected yet.<br>
-            Run the command in the quick start guide below to connect a service.
-          </div>
-        `;
+        feed.innerHTML = `<div class="empty-feed">No active tunnels connected yet.<br>Run the command in the quick start guide below to connect a service.</div>`;
         return;
       }
 
-      // Oldest registration first (client-side, keeps order stable even if
-      // the API response order changes).
       const sorted = [...services].sort((a, b) => new Date(a.connected_at) - new Date(b.connected_at));
-
       feed.innerHTML = sorted.map(svc => {
-        const initial = (svc.name || 'A').charAt(0).toUpperCase();
-        const color = pickColor(svc.name || 'A');
+        const alias = svc.alias || svc.id;
+        const initial = alias.charAt(0).toUpperCase();
+        const color = pickColor(alias);
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
         const hasDesc = Boolean(svc.description && svc.description.trim());
-        const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(svc.name || svc.id)}`;
+        const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(alias)}`;
         const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" ${window.location.protocol}//${host}/`;
         const tab = snippetTabs[svc.id] || 'url';
         const isUrl = tab === 'url';
-
-        const avatarHtml = hasThumb 
-          ? `<img src="${escapeHtml(svc.thumbnail)}" alt="${escapeHtml(svc.name)}" onerror="this.parentElement.innerHTML='${initial}'" />`
+        const avatarHtml = hasThumb
+          ? `<img src="${escapeHtml(svc.thumbnail)}" alt="${escapeHtml(alias)}" onerror="this.parentElement.innerHTML='${initial}'" />`
           : initial;
-
-        const mediaBoxHtml = hasThumb ? `
-          <div class="media-card">
-            <img src="${escapeHtml(svc.thumbnail)}" alt="Thumbnail" />
-          </div>
-        ` : '';
-
+        const mediaBoxHtml = hasThumb ? `<div class="media-card"><img src="${escapeHtml(svc.thumbnail)}" alt="Thumbnail" /></div>` : '';
         return `
           <div class="service-item">
-            <div class="avatar" style="background-color: ${color}">
-              ${avatarHtml}
-            </div>
+            <div class="avatar" style="background-color: ${color}">${avatarHtml}</div>
             <div class="service-body">
               <div class="service-top">
-                <div class="service-identity">
-                  <div class="name-line">
-                    <span class="service-name">${escapeHtml(svc.name || svc.id)}</span>
-                    <span class="dot">&middot;</span>
-                    <span class="service-time">${timeAgo(svc.connected_at)}</span>
-                  </div>
-                </div>
-                <a class="connect-button" href="/_maek/${encodeURIComponent(svc.name || svc.id)}">Connect &rarr;</a>
+                <div class="service-identity"><div class="name-line"><span class="service-name">${escapeHtml(alias)}</span><span class="dot">&middot;</span><span class="service-time">${timeAgo(svc.connected_at)}</span></div></div>
+                <a class="connect-button" href="/_maek/${encodeURIComponent(alias)}">Connect &rarr;</a>
               </div>
-
               ${hasDesc ? `<div class="service-desc">${escapeHtml(svc.description)}</div>` : ''}
               ${mediaBoxHtml}
-
-              <!-- URL / cURL access snippets with tabs -->
               <div class="snippet-tabs">
                 <button id="stab-url-${svc.id}" class="snippet-tab ${isUrl ? 'active' : ''}" onclick="setSnippetTab('${svc.id}', 'url')">URL</button>
                 <button id="stab-curl-${svc.id}" class="snippet-tab ${isUrl ? '' : 'active'}" onclick="setSnippetTab('${svc.id}', 'curl')">cURL</button>
               </div>
-
               <div class="snippets">
-                <div id="sbox-url-${svc.id}" class="curl-snippet" style="display:${isUrl ? 'flex' : 'none'};">
-                  <code class="curl-code"><a href="${escapeHtml(directUrl)}" target="_blank" rel="noopener">${escapeHtml(directUrl)}</a></code>
-                  <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(directUrl)}')">Copy</button>
-                </div>
-                <div id="sbox-curl-${svc.id}" class="curl-snippet" style="display:${isUrl ? 'none' : 'flex'};">
-                  <code class="curl-code">${escapeHtml(curlCmd)}</code>
-                  <button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(curlCmd)}')">Copy</button>
-                </div>
+                <div id="sbox-url-${svc.id}" class="curl-snippet" style="display:${isUrl ? 'flex' : 'none'};"><code class="curl-code"><a href="${escapeHtml(directUrl)}" target="_blank" rel="noopener">${escapeHtml(directUrl)}</a></code><button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(directUrl)}')">Copy</button></div>
+                <div id="sbox-curl-${svc.id}" class="curl-snippet" style="display:${isUrl ? 'none' : 'flex'};"><code class="curl-code">${escapeHtml(curlCmd)}</code><button class="curl-copy-btn" onclick="copySnippet(this, '${escapeHtml(curlCmd)}')">Copy</button></div>
               </div>
             </div>
-          </div>
-        `;
+          </div>`;
       }).join('');
     }
 
@@ -283,7 +204,6 @@
       }
     }
 
-    // Initialize OS tab, command, version, and polling
     selectOSTab(detectOS());
     updateCommand();
     updateLLMsCmd();

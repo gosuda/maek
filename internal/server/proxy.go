@@ -52,10 +52,11 @@ func BuildTunnelProxy(opener HTTPStreamOpener, serviceID, serviceAlias string) *
 	}
 }
 
-// InjectFloatScript inserts the float.js script tag before </body> or </html>.
 func InjectFloatScript(htmlContent []byte, serviceID, serviceAlias string) []byte {
 	cleaned := metaCSPRegex.ReplaceAll(htmlContent, nil)
-	scriptTag := fmt.Sprintf(`<script src="/_maek/float.js" data-id="%s" data-alias="%s" defer></script>`, serviceID, serviceAlias)
+	// data-alias is the v1 contract. data-name is temporarily mirrored for the
+	// existing self-contained float widget, which is otherwise protocol-agnostic.
+	scriptTag := fmt.Sprintf(`<script src="/_maek/float.js" data-id="%s" data-alias="%s" data-name="%s" defer></script>`, serviceID, serviceAlias, serviceAlias)
 	bodyStr := string(cleaned)
 	bodyLower := strings.ToLower(bodyStr)
 	if idx := strings.LastIndex(bodyLower, "</body>"); idx != -1 {
