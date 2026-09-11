@@ -1,13 +1,3 @@
-    const AVATAR_COLORS = [
-      '#0f1419', '#1d9bf0', '#00ba7c', '#7856ff', '#f91880', '#ff7a00', '#00c7e2'
-    ];
-
-    function pickColor(str) {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-    }
-
     function timeAgo(dateString) {
       const now = new Date();
       const past = new Date(dateString);
@@ -147,21 +137,15 @@
       const sorted = [...services].sort((a, b) => new Date(a.connected_at) - new Date(b.connected_at));
       feed.innerHTML = sorted.map(svc => {
         const alias = svc.alias || svc.id;
-        const initial = alias.charAt(0).toUpperCase();
-        const color = pickColor(alias);
         const hasThumb = Boolean(svc.thumbnail && svc.thumbnail.trim());
         const hasDesc = Boolean(svc.description && svc.description.trim());
         const directUrl = `${window.location.protocol}//${host}/_maek/${encodeURIComponent(svc.id)}`;
         const curlCmd = `curl -H "X-Maek-Service: ${svc.id}" ${window.location.protocol}//${host}/`;
         const tab = snippetTabs[svc.id] || 'url';
         const isUrl = tab === 'url';
-        const avatarHtml = hasThumb
-          ? `<img src="${escapeHtml(svc.thumbnail)}" alt="${escapeHtml(alias)}" onerror="this.parentElement.innerHTML='${initial}'" />`
-          : initial;
         const mediaBoxHtml = hasThumb ? `<div class="media-card"><img src="${escapeHtml(svc.thumbnail)}" alt="Thumbnail" /></div>` : '';
         return `
           <div class="service-item">
-            <div class="avatar" style="background-color: ${color}">${avatarHtml}</div>
             <div class="service-body">
               <div class="service-top">
                 <div class="service-identity"><div class="name-line"><span class="service-name">${escapeHtml(alias)}</span><span class="dot">&middot;</span><span class="service-time">${timeAgo(svc.connected_at)}</span></div></div>
