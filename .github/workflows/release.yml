@@ -33,7 +33,10 @@ jobs:
 
       - name: Verify release Go cache isolation
         shell: bash
-        run: test -z "$(go env GOCACHEPROG)"
+        run: |
+          set -euo pipefail
+          cache_program=$(go env GOCACHEPROG)
+          test -z "$cache_program"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
