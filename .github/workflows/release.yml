@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
+env:
+  GOCACHEPROG: ""
+
 jobs:
   goreleaser:
     runs-on: depot-ubuntu-24.04
@@ -24,6 +27,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
+          cache: false
           go-version: 'stable'
 
       - name: Run GoReleaser
