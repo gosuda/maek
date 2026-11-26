@@ -14,6 +14,7 @@ concurrency:
 
 env:
   GOCACHEPROG: ""
+  GOENV: "off"
 
 jobs:
   goreleaser:
@@ -29,6 +30,10 @@ jobs:
         with:
           cache: false
           go-version: 'stable'
+
+      - name: Verify release Go cache isolation
+        shell: bash
+        run: test -z "$(go env GOCACHEPROG)"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
